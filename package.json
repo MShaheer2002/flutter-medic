@@ -1,0 +1,7 @@
+{
+  "name": "flutter-medic",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ]
+}

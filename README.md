@@ -74,4 +74,4 @@ Deliberately narrow, to prove the core loop before expanding:
 
 ## License
 
-TBD.
+MIT — see [LICENSE](./LICENSE).
