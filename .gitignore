@@ -2,3 +2,4 @@ Product-Doc/
 .DS_Store
 node_modules/
 dist/
+# fixtures/
