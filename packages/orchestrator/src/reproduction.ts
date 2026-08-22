@@ -44,6 +44,25 @@ async function runInteractionSteps(marionette: Client, steps: InvestigationStep[
   }
 }
 
+/**
+ * A fixed sleep after interaction steps isn't reliable — found live: even
+ * 1500ms was sometimes too short for a route transition to finish, so
+ * evidence got captured on the screen being navigated AWAY from (doc/016).
+ * Polls until two consecutive reads match (the UI has actually stopped
+ * changing) instead of guessing a bigger constant.
+ */
+async function waitForStableUi(marionette: Client, maxWaitMs = 5000, pollIntervalMs = 300): Promise<string> {
+  let previous: string | null = null;
+  const deadline = Date.now() + maxWaitMs;
+  while (Date.now() < deadline) {
+    const current = toolText(await marionette.callTool({ name: "get_interactive_elements" }));
+    if (current === previous) return current;
+    previous = current;
+    await new Promise((r) => setTimeout(r, pollIntervalMs));
+  }
+  return previous ?? "";
+}
+
 async function runOnce(
   marionette: Client,
   dartMcp: Client,
@@ -60,10 +79,7 @@ async function runOnce(
 
   await runInteractionSteps(marionette, steps);
 
-  // Let navigation and any async work triggered by the steps settle.
-  await new Promise((r) => setTimeout(r, 800));
-
-  const interactiveElements = toolText(await marionette.callTool({ name: "get_interactive_elements" }));
+  const interactiveElements = await waitForStableUi(marionette);
   const runtimeErrors = await getRuntimeErrors(dartMcp);
   const nativeLog = await readFlutterLogSince(deviceId, applicationId, logMarker);
   const networkActivity = await getNetworkActivity(dartMcp);
