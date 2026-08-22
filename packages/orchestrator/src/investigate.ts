@@ -15,12 +15,12 @@ const KILLER_DEMO_APP_PATH = join(
 const MARIONETTE_MCP_BIN = join(homedir(), ".pub-cache/bin/marionette_mcp");
 const REPRODUCTION_RUNS = 3;
 
-interface RunResult {
+export interface RunResult {
   anomalyDetected: boolean;
   interactiveElements: string;
 }
 
-interface EvidenceReport {
+export interface EvidenceReport {
   goal: string;
   reproductionCount: number;
   reproductionRuns: number;
@@ -88,25 +88,15 @@ async function runInvestigationOnce(marionette: Client): Promise<RunResult> {
   return { anomalyDetected, interactiveElements: elementsText };
 }
 
-async function main() {
-  const deviceId = process.argv[2];
-  if (!deviceId) {
-    console.error("Usage: investigate <device-id>");
-    process.exit(1);
-  }
-
-  console.log(`Launching killer-demo app on device ${deviceId}...`);
+export async function runInvestigation(deviceId: string): Promise<EvidenceReport> {
   const appProcess = launchApp(deviceId);
   const vmServiceUri = await waitForVmServiceUri(appProcess);
-  console.log(`App running, VM service at ${vmServiceUri}`);
 
-  console.log("Connecting Marionette...");
   const marionette = await connectMarionette();
   await marionette.callTool({ name: "connect", arguments: { uri: vmServiceUri } });
 
   const runs: RunResult[] = [];
   for (let i = 0; i < REPRODUCTION_RUNS; i++) {
-    console.log(`Run ${i + 1}/${REPRODUCTION_RUNS}...`);
     runs.push(await runInvestigationOnce(marionette));
     if (i < REPRODUCTION_RUNS - 1) {
       await marionette.callTool({ name: "hot_restart" });
@@ -123,14 +113,25 @@ async function main() {
     runs,
   };
 
-  console.log("\n--- Evidence Report ---");
-  console.log(JSON.stringify(report, null, 2));
-
   appProcess.kill();
-  process.exit(report.verdict === "confirmed" ? 0 : 1);
+  return report;
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+// CLI entry point — only runs when this file is executed directly, not when imported.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const deviceId = process.argv[2];
+  if (!deviceId) {
+    console.error("Usage: investigate <device-id>");
+    process.exit(1);
+  }
+
+  runInvestigation(deviceId)
+    .then((report) => {
+      console.log(JSON.stringify(report, null, 2));
+      process.exit(report.verdict === "confirmed" ? 0 : 1);
+    })
+    .catch((err) => {
+      console.error(err);
+      process.exit(1);
+    });
+}
