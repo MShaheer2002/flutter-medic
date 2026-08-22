@@ -9,18 +9,35 @@ const server = new McpServer({ name: "flutter-medic", version: "0.0.1" });
 server.registerTool(
   "investigate",
   {
-    title: "Investigate the killer-demo app",
+    title: "Investigate a Flutter app",
     description:
-      "Launches the killer-demo app on the given device, logs in, checks whether " +
-      "the known Home-screen task-loading bug reproduces, and returns a structured " +
-      "evidence report. Phase 1: hardcoded to this one app and this one known bug " +
-      "signature — not yet a general investigation tool.",
+      "Launches a Flutter app on the given device, runs the given interaction steps, " +
+      "and checks for tier-1 anomaly signals (a runtime exception, or an expected " +
+      "widget that never appeared). Reproduces the flow 3x before reporting. Works " +
+      "against any Flutter project — the caller supplies the steps and, optionally, " +
+      "what widget key it expects to see afterward. No NL planning or LLM judgment " +
+      "yet: the caller must already know what to tap and what to expect.",
     inputSchema: {
       deviceId: z.string().describe("Device ID from `flutter devices` / `adb devices`"),
+      appPath: z.string().describe("Absolute path to the Flutter project to investigate"),
+      goal: z.string().describe("Human-readable description of what's being verified"),
+      steps: z
+        .array(
+          z.object({
+            action: z.enum(["tap", "enter_text"]),
+            key: z.string().describe("The widget's ValueKey"),
+            input: z.string().optional().describe("Required for enter_text"),
+          }),
+        )
+        .describe("Interaction steps to reach the state worth observing"),
+      expectedElementKey: z
+        .string()
+        .optional()
+        .describe("If given, its absence after the steps run is treated as an anomaly"),
     },
   },
-  async ({ deviceId }) => {
-    const report = await runInvestigation(deviceId);
+  async ({ deviceId, appPath, goal, steps, expectedElementKey }) => {
+    const report = await runInvestigation({ deviceId, appPath, goal, steps, expectedElementKey });
     return {
       content: [{ type: "text", text: JSON.stringify(report, null, 2) }],
     };
