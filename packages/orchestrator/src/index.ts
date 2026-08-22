@@ -3,8 +3,13 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 import { runInvestigation } from "./investigate.js";
+import { closeApp, enterText, hotRestart, launchAppSession, observe, tap } from "./session.js";
 
 const server = new McpServer({ name: "flutter-medic", version: "0.0.1" });
+
+function textResult(data: unknown) {
+  return { content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] };
+}
 
 server.registerTool(
   "investigate",
@@ -15,10 +20,11 @@ server.registerTool(
       "tier-1 anomaly signals (a runtime exception, or an expected widget that " +
       "never appeared). Reproduces the flow 3x before reporting. Works against " +
       "any Flutter project — the caller supplies the steps and, optionally, what " +
-      "widget key it expects to see afterward. No NL planning or LLM judgment " +
-      "yet: the caller must already know what to tap and what to expect. If " +
-      "deviceId is omitted, auto-detects the single connected physical Android " +
-      "device — errors if there's none or more than one.",
+      "widget key it expects to see afterward. Best when you already know exactly " +
+      "what to do and check; for open-ended exploration, use launch_app + tap / " +
+      "enter_text / observe instead, then call investigate once you know what to " +
+      "verify. If deviceId is omitted, auto-detects the single connected physical " +
+      "Android device — errors if there's none or more than one.",
     inputSchema: {
       deviceId: z
         .string()
@@ -43,10 +49,83 @@ server.registerTool(
   },
   async ({ deviceId, appPath, goal, steps, expectedElementKey }) => {
     const report = await runInvestigation({ deviceId, appPath, goal, steps, expectedElementKey });
-    return {
-      content: [{ type: "text", text: JSON.stringify(report, null, 2) }],
-    };
+    return textResult(report);
   },
+);
+
+server.registerTool(
+  "launch_app",
+  {
+    title: "Launch a Flutter app for exploration",
+    description:
+      "Starts a Flutter app on a device and holds the connection open across " +
+      "subsequent tool calls (tap, enter_text, observe, hot_restart), so you can " +
+      "explore and plan step by step instead of pre-specifying every action up " +
+      "front like investigate requires. Only one session at a time — call " +
+      "close_app before launching another. If deviceId is omitted, auto-detects " +
+      "the single connected physical Android device.",
+    inputSchema: {
+      appPath: z.string().describe("Absolute path to the Flutter project to launch"),
+      deviceId: z.string().optional().describe("Device ID. Auto-detected if omitted."),
+    },
+  },
+  async ({ appPath, deviceId }) => textResult(await launchAppSession(appPath, deviceId)),
+);
+
+server.registerTool(
+  "close_app",
+  {
+    title: "Close the current app session",
+    description: "Stops the app and releases the session opened by launch_app. Safe to call even if none is open.",
+    inputSchema: {},
+  },
+  async () => textResult(await closeApp()),
+);
+
+server.registerTool(
+  "tap",
+  {
+    title: "Tap a widget",
+    description: "Taps the widget with the given ValueKey in the currently launched app.",
+    inputSchema: { key: z.string().describe("The widget's ValueKey") },
+  },
+  async ({ key }) => textResult(await tap(key)),
+);
+
+server.registerTool(
+  "enter_text",
+  {
+    title: "Enter text into a widget",
+    description: "Types text into the text field with the given ValueKey in the currently launched app.",
+    inputSchema: {
+      key: z.string().describe("The widget's ValueKey"),
+      input: z.string().describe("Text to type"),
+    },
+  },
+  async ({ key, input }) => textResult(await enterText(key, input)),
+);
+
+server.registerTool(
+  "observe",
+  {
+    title: "Observe the current app state",
+    description:
+      "Returns the widget tree, any VM-service-reported runtime exceptions, and any " +
+      "native-log exceptions since the last observe call (or since launch_app, on " +
+      "the first call). Raw evidence, no judgment applied — you decide what it means.",
+    inputSchema: {},
+  },
+  async () => textResult(await observe()),
+);
+
+server.registerTool(
+  "hot_restart",
+  {
+    title: "Hot restart the app",
+    description: "Restarts the currently launched app from main(), resetting all state.",
+    inputSchema: {},
+  },
+  async () => textResult(await hotRestart()),
 );
 
 const transport = new StdioServerTransport();

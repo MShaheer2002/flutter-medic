@@ -1,0 +1,76 @@
+import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+
+const execFileAsync = promisify(execFile);
+
+export const MARIONETTE_MCP_BIN = join(homedir(), ".pub-cache/bin/marionette_mcp");
+
+export function launchApp(deviceId: string, appPath: string): ChildProcessWithoutNullStreams {
+  return spawn("flutter", ["run", "-d", deviceId, "--debug"], { cwd: appPath });
+}
+
+/**
+ * Killing the local `flutter run` wrapper process doesn't reliably stop the
+ * app on the device itself — force-stop it explicitly so a stale instance
+ * doesn't linger and confuse the next run.
+ */
+export async function forceStopApp(deviceId: string, applicationId: string): Promise<void> {
+  await execFileAsync("adb", ["-s", deviceId, "shell", "am", "force-stop", applicationId]).catch(() => {});
+}
+
+export function waitForVmServiceUri(proc: ChildProcessWithoutNullStreams): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let buffer = "";
+    const onData = (chunk: Buffer) => {
+      buffer += chunk.toString();
+      const match = buffer.match(/A Dart VM Service .* is available at: (http:\/\/[^\s]+)/);
+      if (match) {
+        proc.stdout.off("data", onData);
+        resolve(match[1].replace("http://", "ws://") + "ws");
+      }
+    };
+    proc.stdout.on("data", onData);
+    proc.on("exit", (code) => reject(new Error(`flutter run exited early (code ${code})`)));
+  });
+}
+
+export function toolText(result: unknown): string {
+  const content = (result as { content: Array<{ type: string; text?: string }> }).content;
+  return content.map((c) => (c.type === "text" ? (c.text ?? "") : "")).join("\n");
+}
+
+export async function connectStdioClient(command: string, args: string[] = []): Promise<Client> {
+  const client = new Client({ name: "flutter-medic-orchestrator", version: "0.0.1" });
+  await client.connect(new StdioClientTransport({ command, args }));
+  return client;
+}
+
+/**
+ * Connects Dart MCP's DTD to the app instance rooted at `appPath`. Must happen
+ * BEFORE anything you want get_runtime_errors to see, not after: it only
+ * captures exceptions that occur while actively connected, not a replayed
+ * history — connecting after the fact silently misses everything (doc/007).
+ */
+export async function connectDartMcpToApp(dartMcp: Client, appPath: string): Promise<boolean> {
+  await dartMcp.callTool({ name: "roots", arguments: { command: "add", uris: [`file://${appPath}`] } });
+  const listing = toolText(await dartMcp.callTool({ name: "dtd", arguments: { command: "listDtdUris" } }));
+
+  const escapedPath = appPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const blocks = listing.split(/\n\n+/);
+  const block = blocks.find((b) => new RegExp(`Workspace Root:\\s+${escapedPath}\\s*$`, "m").test(b));
+  const uriMatch = block?.match(/WS URI:\s+(\S+)/);
+  if (!uriMatch) {
+    return false; // no DTD instance found for this app yet
+  }
+
+  await dartMcp.callTool({ name: "dtd", arguments: { command: "connect", uri: uriMatch[1] } });
+  return true;
+}
+
+export async function getRuntimeErrors(dartMcp: Client): Promise<string> {
+  return toolText(await dartMcp.callTool({ name: "get_runtime_errors", arguments: { clearRuntimeErrors: true } }));
+}

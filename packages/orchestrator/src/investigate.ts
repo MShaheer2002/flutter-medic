@@ -1,9 +1,5 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 
 import {
   detectMissingExpectedElement,
@@ -12,9 +8,18 @@ import {
   type AnomalySignal,
 } from "./anomaly-detection.js";
 import { detectAndroidDevice } from "./device-detection.js";
+import {
+  MARIONETTE_MCP_BIN,
+  connectDartMcpToApp,
+  connectStdioClient,
+  forceStopApp,
+  getRuntimeErrors,
+  launchApp,
+  toolText,
+  waitForVmServiceUri,
+} from "./mcp-clients.js";
 import { captureLogMarker, getAndroidApplicationId, readFlutterLogSince } from "./native-log.js";
 
-const MARIONETTE_MCP_BIN = join(homedir(), ".pub-cache/bin/marionette_mcp");
 const REPRODUCTION_RUNS = 3;
 
 export interface InvestigationStep {
@@ -51,63 +56,6 @@ export interface EvidenceReport {
   reproductionRuns: number;
   verdict: "confirmed" | "not-reproduced";
   runs: RunResult[];
-}
-
-function launchApp(deviceId: string, appPath: string): ChildProcessWithoutNullStreams {
-  return spawn("flutter", ["run", "-d", deviceId, "--debug"], { cwd: appPath });
-}
-
-function waitForVmServiceUri(proc: ChildProcessWithoutNullStreams): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let buffer = "";
-    const onData = (chunk: Buffer) => {
-      buffer += chunk.toString();
-      const match = buffer.match(/A Dart VM Service .* is available at: (http:\/\/[^\s]+)/);
-      if (match) {
-        proc.stdout.off("data", onData);
-        resolve(match[1].replace("http://", "ws://") + "ws");
-      }
-    };
-    proc.stdout.on("data", onData);
-    proc.on("exit", (code) => reject(new Error(`flutter run exited early (code ${code})`)));
-  });
-}
-
-function toolText(result: unknown): string {
-  const content = (result as { content: Array<{ type: string; text?: string }> }).content;
-  return content.map((c) => (c.type === "text" ? (c.text ?? "") : "")).join("\n");
-}
-
-async function connectStdioClient(command: string, args: string[] = []): Promise<Client> {
-  const client = new Client({ name: "flutter-medic-orchestrator", version: "0.0.1" });
-  await client.connect(new StdioClientTransport({ command, args }));
-  return client;
-}
-
-/**
- * Connects Dart MCP's DTD to the app instance rooted at `appPath`. Must happen
- * BEFORE the interaction steps run: get_runtime_errors only sees exceptions that
- * occur while actively connected, not a replayed history — connecting after the
- * fact silently misses everything.
- */
-async function connectDartMcpToApp(dartMcp: Client, appPath: string): Promise<boolean> {
-  await dartMcp.callTool({ name: "roots", arguments: { command: "add", uris: [`file://${appPath}`] } });
-  const listing = toolText(await dartMcp.callTool({ name: "dtd", arguments: { command: "listDtdUris" } }));
-
-  const escapedPath = appPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const blocks = listing.split(/\n\n+/);
-  const block = blocks.find((b) => new RegExp(`Workspace Root:\\s+${escapedPath}\\s*$`, "m").test(b));
-  const uriMatch = block?.match(/WS URI:\s+(\S+)/);
-  if (!uriMatch) {
-    return false; // no DTD instance found for this app yet
-  }
-
-  await dartMcp.callTool({ name: "dtd", arguments: { command: "connect", uri: uriMatch[1] } });
-  return true;
-}
-
-async function getRuntimeErrors(dartMcp: Client): Promise<string> {
-  return toolText(await dartMcp.callTool({ name: "get_runtime_errors", arguments: { clearRuntimeErrors: true } }));
 }
 
 async function runInteractionSteps(marionette: Client, steps: InvestigationStep[]) {
@@ -196,6 +144,7 @@ export async function runInvestigation(params: InvestigateParams): Promise<Evide
   await marionette.close();
   await dartMcp.close();
   appProcess.kill();
+  await forceStopApp(device.id, applicationId);
   return report;
 }
 
