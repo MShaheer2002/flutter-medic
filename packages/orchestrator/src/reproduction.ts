@@ -1,11 +1,13 @@
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 
 import {
+  detectBaselineDrift,
   detectMissingExpectedElement,
   detectNativeLogException,
   detectRuntimeException,
   type AnomalySignal,
 } from "./anomaly-detection.js";
+import { loadBaseline, saveBaseline } from "./baseline.js";
 import { connectDartMcpToApp, getNetworkActivity, getRuntimeErrors, toolText } from "./mcp-clients.js";
 import { captureLogMarker, readFlutterLogSince } from "./native-log.js";
 
@@ -47,6 +49,7 @@ async function runOnce(
   dartMcp: Client,
   deviceId: string,
   applicationId: string,
+  appPath: string,
   steps: InvestigationStep[],
   expectedElementKey: string | undefined,
 ): Promise<RunResult> {
@@ -77,6 +80,17 @@ async function runOnce(
     if (missingSignal) signals.push(missingSignal);
   }
 
+  // Tier-2: first known-good run for this exact app+steps banks the baseline;
+  // every later run diffs against it. Never bank a run that already has a
+  // tier-1 signal — that would make a broken state look "known good."
+  const baseline = await loadBaseline(appPath, steps, expectedElementKey);
+  if (baseline !== null) {
+    const driftSignal = detectBaselineDrift(interactiveElements, baseline);
+    if (driftSignal) signals.push(driftSignal);
+  } else if (signals.length === 0) {
+    await saveBaseline(appPath, steps, expectedElementKey, interactiveElements).catch(() => {});
+  }
+
   return { anomalyDetected: signals.length > 0, signals, interactiveElements, networkActivity };
 }
 
@@ -98,7 +112,7 @@ export async function reproduce(
 ): Promise<ReproductionResult> {
   const runs: RunResult[] = [];
   for (let i = 0; i < REPRODUCTION_RUNS; i++) {
-    runs.push(await runOnce(marionette, dartMcp, deviceId, applicationId, steps, expectedElementKey));
+    runs.push(await runOnce(marionette, dartMcp, deviceId, applicationId, appPath, steps, expectedElementKey));
     if (i < REPRODUCTION_RUNS - 1) {
       await marionette.callTool({ name: "hot_restart" });
       await new Promise((r) => setTimeout(r, 1500));
