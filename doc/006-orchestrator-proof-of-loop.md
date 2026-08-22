@@ -25,4 +25,12 @@ Hardcoded, not general: it checks specifically for `empty_tasks_message` present
 
 ## Mental model
 
-This is the first `packages/orchestrator` code that does something real. Everything before this (`index.ts`'s stub, the toolchain-proof from entry 002) was preparation; this is the actual product's skeleton, working. Next: generalize this from "hardcoded for one known app" toward the real tool-routing/session-state architecture the spec describes — or, alternatively, wire this same flow up as an actual MCP *server* tool (`investigate`) that Claude Code itself can call, rather than a standalone script — that's the next real architectural decision, not yet made.
+This is the first `packages/orchestrator` code that does something real. Everything before this (`index.ts`'s stub, the toolchain-proof from entry 002) was preparation; this is the actual product's skeleton, working.
+
+## Update: wired up as a real MCP tool, verified
+
+`index.ts` now registers `investigate` as an actual `McpServer` tool (device ID as input, zod schema) and serves over stdio, instead of just constructing an unused server object. `investigate.ts`'s core logic was refactored into a reusable exported function, with the CLI entry point kept as a thin wrapper.
+
+Registered locally as the `flutter-medic` MCP server and — after the expected session restart for a brand-new server (per the Phase 0 finding: local scope skips the approval prompt, but a restart is still needed for a genuinely new server) — called `mcp__flutter-medic__investigate` directly, the same way any other MCP tool gets called. Result: identical to the CLI run — reproduced 3/3, verdict `"confirmed"`.
+
+This proves the actual product architecture, not just the mechanics: `flutter-medic` is now a real peer MCP server next to Dart MCP, Marionette, and Patrol — callable by any MCP-compatible AI client, not just triggerable by hand from a terminal. The remaining gap is capability breadth, not plumbing: the detection logic is still hardcoded to this one app's one known bug signature. Generalizing it toward the tier-1/2/3 anomaly system is the next real piece of work.
