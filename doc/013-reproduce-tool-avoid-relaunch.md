@@ -31,4 +31,8 @@ One real app launch for the whole investigation, not two.
 
 ## Verified
 
-Regression-tested `investigate` via the CLI after the extraction — identical result to every prior run (killer-demo app, reproduced 3/3, `"confirmed"`). Live verification of the new `reproduce` tool itself blocked on a session restart (new tool registration, same pattern hit every time a tool is added — see doc/006, 010, 012).
+Regression-tested `investigate` via the CLI after the extraction — identical result to every prior run (killer-demo app, reproduced 3/3, `"confirmed"`).
+
+**Live-verified the actual fix, after the session restart**, through the real MCP path against `crash_demo_app`: `launch_app` → `observe` (login screen) → `enter_text` ×2 → `tap` → `observe` (found the crash again) → `reproduce` with the discovered steps — reproduced 3/3, `"confirmed"`, identical `runtime-exception` signal to `investigate`'s output.
+
+**The decisive check**: captured the app's OS-level PID via `adb shell pidof` right after `launch_app` (`7537`), then again after `reproduce`'s three hot-restart cycles completed. **Identical PID before and after** — proof the app process was never relaunched, only hot-restarted, exactly as designed. `close_app` afterward correctly force-stopped it (confirmed via `ps -A`), so the earlier cleanup fix (010) still holds too.
