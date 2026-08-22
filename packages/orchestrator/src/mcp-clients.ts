@@ -68,9 +68,55 @@ export async function connectDartMcpToApp(dartMcp: Client, appPath: string): Pro
   }
 
   await dartMcp.callTool({ name: "dtd", arguments: { command: "connect", uri: uriMatch[1] } });
+
+  // Must be enabled before any HTTP request we want profiled fires — same
+  // "enable before the fact happens" gap as get_runtime_errors (doc/007).
+  // Best-effort: enrichment evidence, not core functionality, so an older SDK
+  // or a non-Flutter isolate must not break the connect flow.
+  await enableHttpProfiling(dartMcp, await getMainIsolateId(dartMcp)).catch(() => {});
   return true;
 }
 
 export async function getRuntimeErrors(dartMcp: Client): Promise<string> {
   return toolText(await dartMcp.callTool({ name: "get_runtime_errors", arguments: { clearRuntimeErrors: true } }));
+}
+
+/**
+ * HTTP profiling extension RPCs are per-isolate, so a fresh isolate ID (from
+ * `main()` running, and again after every hot_restart) is required before
+ * they'll work.
+ */
+export async function getMainIsolateId(dartMcp: Client): Promise<string> {
+  const raw = toolText(await dartMcp.callTool({ name: "vm_service", arguments: { command: "callMethod", method: "getVM" } }));
+  const vm = JSON.parse(raw) as { isolates?: Array<{ id: string }> };
+  const id = vm.isolates?.[0]?.id;
+  if (!id) throw new Error("No isolate found on connected VM");
+  return id;
+}
+
+/**
+ * Must be enabled BEFORE the HTTP request fires, or it's silently missed —
+ * same "enable before the fact happens" gap as get_runtime_errors (doc/007).
+ * Only works against a real Flutter-embedded isolate, not a bare Dart CLI
+ * process (doc/015).
+ */
+export async function enableHttpProfiling(dartMcp: Client, isolateId: string): Promise<void> {
+  await dartMcp.callTool({
+    name: "vm_service",
+    arguments: { command: "callMethod", method: "ext.dart.io.httpEnableTimelineLogging", isolateId, arguments: { enabled: true } },
+  });
+}
+
+export async function getNetworkActivity(dartMcp: Client): Promise<string> {
+  try {
+    const isolateId = await getMainIsolateId(dartMcp);
+    return toolText(
+      await dartMcp.callTool({
+        name: "vm_service",
+        arguments: { command: "callMethod", method: "ext.dart.io.getHttpProfile", isolateId },
+      }),
+    );
+  } catch {
+    return "";
+  }
 }

@@ -7,6 +7,7 @@ import {
   connectDartMcpToApp,
   connectStdioClient,
   forceStopApp,
+  getNetworkActivity,
   getRuntimeErrors,
   launchApp as spawnFlutterRun,
   toolText,
@@ -121,10 +122,11 @@ export async function observe() {
   const interactiveElements = toolText(await session.marionette.callTool({ name: "get_interactive_elements" }));
   const runtimeErrors = await getRuntimeErrors(session.dartMcp);
   const nativeLog = await readFlutterLogSince(session.deviceId, session.applicationId, session.logMarker);
+  const networkActivity = await getNetworkActivity(session.dartMcp);
 
   session.logMarker = await captureLogMarker(session.deviceId);
 
-  return { interactiveElements, runtimeErrors, nativeLog };
+  return { interactiveElements, runtimeErrors, nativeLog, networkActivity };
 }
 
 export async function hotRestart() {

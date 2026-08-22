@@ -6,7 +6,7 @@ import {
   detectRuntimeException,
   type AnomalySignal,
 } from "./anomaly-detection.js";
-import { connectDartMcpToApp, getRuntimeErrors, toolText } from "./mcp-clients.js";
+import { connectDartMcpToApp, getNetworkActivity, getRuntimeErrors, toolText } from "./mcp-clients.js";
 import { captureLogMarker, readFlutterLogSince } from "./native-log.js";
 
 const REPRODUCTION_RUNS = 3;
@@ -22,6 +22,7 @@ export interface RunResult {
   anomalyDetected: boolean;
   signals: AnomalySignal[];
   interactiveElements: string;
+  networkActivity: string;
 }
 
 export interface ReproductionResult {
@@ -62,6 +63,7 @@ async function runOnce(
   const interactiveElements = toolText(await marionette.callTool({ name: "get_interactive_elements" }));
   const runtimeErrors = await getRuntimeErrors(dartMcp);
   const nativeLog = await readFlutterLogSince(deviceId, applicationId, logMarker);
+  const networkActivity = await getNetworkActivity(dartMcp);
 
   const signals: AnomalySignal[] = [];
   const exceptionSignal = detectRuntimeException(runtimeErrors);
@@ -75,7 +77,7 @@ async function runOnce(
     if (missingSignal) signals.push(missingSignal);
   }
 
-  return { anomalyDetected: signals.length > 0, signals, interactiveElements };
+  return { anomalyDetected: signals.length > 0, signals, interactiveElements, networkActivity };
 }
 
 /**
