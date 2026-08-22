@@ -36,6 +36,15 @@ interface Session {
 
 let activeSession: Session | null = null;
 
+// Matches Marionette's own element-targeting: exactly one of these should be
+// given per call. `type` is the widget's Flutter type name (e.g. "ListTile").
+export interface ElementMatcher {
+  key?: string;
+  text?: string;
+  type?: string;
+  coordinates?: { x: number; y: number };
+}
+
 function requireSession(): Session {
   if (!activeSession) {
     throw new Error("No active session. Call launch_app first.");
@@ -148,4 +157,99 @@ export async function reproduce(steps: InvestigationStep[], expectedElementKey?:
     steps,
     expectedElementKey,
   );
+}
+
+export async function doubleTap(matcher: ElementMatcher, delay?: number) {
+  const session = requireSession();
+  await session.marionette.callTool({ name: "double_tap", arguments: { ...matcher, delay } });
+  return { message: "Double-tapped." };
+}
+
+export async function longPress(matcher: ElementMatcher, duration?: number) {
+  const session = requireSession();
+  await session.marionette.callTool({ name: "long_press", arguments: { ...matcher, duration } });
+  return { message: "Long-pressed." };
+}
+
+/** Desktop only — dispatches a secondary-button (right-click) pointer event. */
+export async function secondaryTap(matcher: ElementMatcher) {
+  const session = requireSession();
+  await session.marionette.callTool({ name: "secondary_tap", arguments: { ...matcher } });
+  return { message: "Secondary-tapped." };
+}
+
+export interface SwipeParams {
+  /** Element-based mode: target + direction (+ optional distance). */
+  key?: string;
+  text?: string;
+  direction?: "left" | "right" | "up" | "down";
+  distance?: number;
+  /** Coordinate-based mode: all four required together, instead of the above. */
+  startX?: number;
+  startY?: number;
+  endX?: number;
+  endY?: number;
+}
+
+export async function swipe(params: SwipeParams) {
+  const session = requireSession();
+  await session.marionette.callTool({ name: "swipe", arguments: { ...params } });
+  return { message: "Swiped." };
+}
+
+/** scale > 1 zooms in, scale < 1 zooms out. */
+export async function pinchZoom(matcher: ElementMatcher, scale: number, startDistance?: number) {
+  const session = requireSession();
+  await session.marionette.callTool({
+    name: "pinch_zoom",
+    arguments: { ...matcher, scale, start_distance: startDistance },
+  });
+  return { message: "Pinch-zoomed." };
+}
+
+/** Scrolls the view until an element matching key/text becomes visible. */
+export async function scrollTo(key?: string, text?: string) {
+  const session = requireSession();
+  await session.marionette.callTool({ name: "scroll_to", arguments: { key, text } });
+  return { message: "Scrolled." };
+}
+
+/** Android back / iOS swipe-back. Pops a route if there's one to pop. */
+export async function pressBackButton() {
+  const session = requireSession();
+  const result = await session.marionette.callTool({ name: "press_back_button" });
+  return { message: toolText(result) };
+}
+
+/**
+ * Real key events through the focus system (unlike enter_text, which just
+ * replaces a field's value) — for submit-on-enter, tab navigation, escape,
+ * arrow keys, or shortcuts via modifiers (e.g. "control,shift").
+ */
+export async function pressKey(key: string, modifiers?: string) {
+  const session = requireSession();
+  await session.marionette.callTool({ name: "press_key", arguments: { key, modifiers } });
+  return { message: `Pressed key "${key}".` };
+}
+
+/** Base64 PNG(s) of the current visual state — one per view. */
+export async function takeScreenshots() {
+  const session = requireSession();
+  const result = await session.marionette.callTool({ name: "take_screenshots" });
+  const content = (result as { content: Array<{ type: string; data?: string; mimeType?: string }> }).content;
+  return { screenshots: content.filter((c) => c.type === "image").map((c) => ({ data: c.data, mimeType: c.mimeType })) };
+}
+
+/** Marionette's own app log collector — separate from observe()'s VM-service/logcat evidence. */
+export async function getLogs() {
+  const session = requireSession();
+  const result = await session.marionette.callTool({ name: "get_logs" });
+  return { logs: toolText(result) };
+}
+
+/** Reloads Dart code without restarting the app — preserves state, unlike hot_restart. */
+export async function hotReload() {
+  const session = requireSession();
+  await session.marionette.callTool({ name: "hot_reload" });
+  return { message: "Hot reload complete." };
 }

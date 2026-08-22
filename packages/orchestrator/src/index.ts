@@ -3,13 +3,44 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 import { runInvestigation } from "./investigate.js";
-import { closeApp, enterText, hotRestart, launchAppSession, observe, reproduce, tap } from "./session.js";
+import {
+  closeApp,
+  doubleTap,
+  enterText,
+  getLogs,
+  hotReload,
+  hotRestart,
+  launchAppSession,
+  longPress,
+  observe,
+  pinchZoom,
+  pressBackButton,
+  pressKey,
+  reproduce,
+  scrollTo,
+  secondaryTap,
+  swipe,
+  takeScreenshots,
+  tap,
+} from "./session.js";
 
 const server = new McpServer({ name: "flutter-medic", version: "0.0.1" });
 
 function textResult(data: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] };
 }
+
+// Shared by every gesture tool that targets an element the way Marionette
+// itself does: exactly one of key / text / type / coordinates.
+const matcherSchema = {
+  key: z.string().optional().describe("The widget's ValueKey — prefer this when known"),
+  text: z.string().optional().describe("The element's visible text content"),
+  type: z.string().optional().describe('The widget\'s Flutter type name (e.g. "ListTile")'),
+  coordinates: z
+    .object({ x: z.number(), y: z.number() })
+    .optional()
+    .describe("Screen coordinates, if no other selector applies"),
+};
 
 server.registerTool(
   "investigate",
@@ -157,6 +188,153 @@ server.registerTool(
     },
   },
   async ({ steps, expectedElementKey }) => textResult(await reproduce(steps, expectedElementKey)),
+);
+
+server.registerTool(
+  "double_tap",
+  {
+    title: "Double-tap a widget",
+    description: "Double-taps the matched element — text selection, zoom, or anything responding to double tap.",
+    inputSchema: { ...matcherSchema, delay: z.number().optional().describe("Time between taps in ms (default 100)") },
+  },
+  async ({ delay, ...matcher }) => textResult(await doubleTap(matcher, delay)),
+);
+
+server.registerTool(
+  "long_press",
+  {
+    title: "Long-press (hold) a widget",
+    description: "Holds a press on the matched element — context menus, reorderable lists, etc.",
+    inputSchema: {
+      ...matcherSchema,
+      duration: z.number().optional().describe("How long to hold, in ms (default 600)"),
+    },
+  },
+  async ({ duration, ...matcher }) => textResult(await longPress(matcher, duration)),
+);
+
+server.registerTool(
+  "secondary_tap",
+  {
+    title: "Secondary-tap (right-click) a widget",
+    description: "Desktop only. Dispatches a right-button pointer event — for onSecondaryTap / context menus.",
+    inputSchema: matcherSchema,
+  },
+  async (matcher) => textResult(await secondaryTap(matcher)),
+);
+
+server.registerTool(
+  "swipe",
+  {
+    title: "Swipe or drag",
+    description:
+      "Element-based: key/text + direction (+ optional distance). Or coordinate-based: startX/startY/endX/endY " +
+      "together, for exact control. For PageView, Dismissible, Drawer, Slider, and similar swipe-based widgets.",
+    inputSchema: {
+      key: z.string().optional(),
+      text: z.string().optional(),
+      direction: z.enum(["left", "right", "up", "down"]).optional(),
+      distance: z.number().optional().describe("Pixels, element-based mode only (default 200)"),
+      startX: z.number().optional(),
+      startY: z.number().optional(),
+      endX: z.number().optional(),
+      endY: z.number().optional(),
+    },
+  },
+  async (params) => textResult(await swipe(params)),
+);
+
+server.registerTool(
+  "pinch_zoom",
+  {
+    title: "Pinch-zoom a widget",
+    description: "Pinch gesture on the matched element — maps, images, PDFs, anything zoomable.",
+    inputSchema: {
+      ...matcherSchema,
+      scale: z.number().describe("> 1.0 zooms in, < 1.0 zooms out"),
+      startDistance: z.number().optional().describe("Initial finger distance in pixels (default 200)"),
+    },
+  },
+  async ({ scale, startDistance, ...matcher }) => textResult(await pinchZoom(matcher, scale, startDistance)),
+);
+
+server.registerTool(
+  "scroll_to",
+  {
+    title: "Scroll until an element is visible",
+    description: "Scrolls the view until the element matching key or text becomes visible.",
+    inputSchema: {
+      key: z.string().optional().describe("The widget's ValueKey"),
+      text: z.string().optional().describe("The element's visible text content"),
+    },
+  },
+  async ({ key, text }) => textResult(await scrollTo(key, text)),
+);
+
+server.registerTool(
+  "press_back_button",
+  {
+    title: "Press the system back button",
+    description: "Android back / iOS swipe-back. Pops the current route if there's one to pop.",
+    inputSchema: {},
+  },
+  async () => textResult(await pressBackButton()),
+);
+
+server.registerTool(
+  "press_key",
+  {
+    title: "Press a keyboard key",
+    description:
+      "Sends a real key event through the focus system (unlike enter_text, which just replaces a field's " +
+      "value) — submit with enter, move focus with tab, dismiss with escape, edit with backspace/arrows, or " +
+      "trigger shortcuts via modifiers. Sent to whatever currently has focus — tap a target first if needed.",
+    inputSchema: {
+      key: z
+        .string()
+        .describe(
+          "enter, tab, escape, backspace, delete, space, arrowUp/Down/Left/Right, home, end, pageUp, pageDown, or a single a-z/0-9 character",
+        ),
+      modifiers: z
+        .string()
+        .optional()
+        .describe('Comma-separated: control, shift, alt, meta (e.g. "control,shift")'),
+    },
+  },
+  async ({ key, modifiers }) => textResult(await pressKey(key, modifiers)),
+);
+
+server.registerTool(
+  "take_screenshots",
+  {
+    title: "Take screenshots",
+    description: "Captures the current visual state of every view in the app as PNG images.",
+    inputSchema: {},
+  },
+  async () => textResult(await takeScreenshots()),
+);
+
+server.registerTool(
+  "get_logs",
+  {
+    title: "Get Marionette's app logs",
+    description:
+      "Marionette's own collected app logs since launch or the last hot reload — separate from observe()'s " +
+      "VM-service/native-log evidence. Needs a marionette_logging/marionette_logger adapter wired into the " +
+      "target app to work; errors with setup instructions otherwise.",
+    inputSchema: {},
+  },
+  async () => textResult(await getLogs()),
+);
+
+server.registerTool(
+  "hot_reload",
+  {
+    title: "Hot reload the app",
+    description: "Reloads Dart code without restarting — preserves current state, unlike hot_restart.",
+    inputSchema: {},
+  },
+  async () => textResult(await hotReload()),
 );
 
 const transport = new StdioServerTransport();
