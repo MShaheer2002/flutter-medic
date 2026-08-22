@@ -6,7 +6,8 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "investigate": "npm run build && node dist/investigate.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0"
