@@ -11,14 +11,19 @@ server.registerTool(
   {
     title: "Investigate a Flutter app",
     description:
-      "Launches a Flutter app on the given device, runs the given interaction steps, " +
-      "and checks for tier-1 anomaly signals (a runtime exception, or an expected " +
-      "widget that never appeared). Reproduces the flow 3x before reporting. Works " +
-      "against any Flutter project — the caller supplies the steps and, optionally, " +
-      "what widget key it expects to see afterward. No NL planning or LLM judgment " +
-      "yet: the caller must already know what to tap and what to expect.",
+      "Launches a Flutter app and runs the given interaction steps, checking for " +
+      "tier-1 anomaly signals (a runtime exception, or an expected widget that " +
+      "never appeared). Reproduces the flow 3x before reporting. Works against " +
+      "any Flutter project — the caller supplies the steps and, optionally, what " +
+      "widget key it expects to see afterward. No NL planning or LLM judgment " +
+      "yet: the caller must already know what to tap and what to expect. If " +
+      "deviceId is omitted, auto-detects the single connected physical Android " +
+      "device — errors if there's none or more than one.",
     inputSchema: {
-      deviceId: z.string().describe("Device ID from `flutter devices` / `adb devices`"),
+      deviceId: z
+        .string()
+        .optional()
+        .describe("Device ID from `flutter devices` / `adb devices`. Auto-detected if omitted."),
       appPath: z.string().describe("Absolute path to the Flutter project to investigate"),
       goal: z.string().describe("Human-readable description of what's being verified"),
       steps: z

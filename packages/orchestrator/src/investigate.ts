@@ -6,6 +6,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 import { detectMissingExpectedElement, detectRuntimeException, type AnomalySignal } from "./anomaly-detection.js";
+import { detectAndroidDevice } from "./device-detection.js";
 
 const MARIONETTE_MCP_BIN = join(homedir(), ".pub-cache/bin/marionette_mcp");
 const REPRODUCTION_RUNS = 3;
@@ -18,7 +19,8 @@ export interface InvestigationStep {
 }
 
 export interface InvestigateParams {
-  deviceId: string;
+  /** If omitted, auto-detects the single connected physical Android device. */
+  deviceId?: string;
   /** Absolute path to the Flutter project to investigate. */
   appPath: string;
   /** Human-readable description of what's being verified — carried through to the report. */
@@ -37,6 +39,8 @@ export interface RunResult {
 
 export interface EvidenceReport {
   goal: string;
+  deviceId: string;
+  deviceName?: string;
   reproductionCount: number;
   reproductionRuns: number;
   verdict: "confirmed" | "not-reproduced";
@@ -138,7 +142,9 @@ async function runInvestigationOnce(
 }
 
 export async function runInvestigation(params: InvestigateParams): Promise<EvidenceReport> {
-  const appProcess = launchApp(params.deviceId, params.appPath);
+  const device = params.deviceId ? { id: params.deviceId, name: undefined } : await detectAndroidDevice();
+
+  const appProcess = launchApp(device.id, params.appPath);
   const vmServiceUri = await waitForVmServiceUri(appProcess);
 
   const marionette = await connectStdioClient(MARIONETTE_MCP_BIN);
@@ -162,6 +168,8 @@ export async function runInvestigation(params: InvestigateParams): Promise<Evide
   const reproductionCount = runs.filter((r) => r.anomalyDetected).length;
   const report: EvidenceReport = {
     goal: params.goal,
+    deviceId: device.id,
+    deviceName: device.name,
     reproductionCount,
     reproductionRuns: REPRODUCTION_RUNS,
     verdict: reproductionCount === REPRODUCTION_RUNS ? "confirmed" : "not-reproduced",
@@ -176,9 +184,9 @@ export async function runInvestigation(params: InvestigateParams): Promise<Evide
 
 // CLI entry point — only runs when this file is executed directly, not when imported.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const [deviceId, appPath] = process.argv.slice(2);
-  if (!deviceId || !appPath) {
-    console.error("Usage: investigate <device-id> <app-path>");
+  const [appPath, deviceId] = process.argv.slice(2);
+  if (!appPath) {
+    console.error("Usage: investigate <app-path> [device-id]");
     process.exit(1);
   }
 
