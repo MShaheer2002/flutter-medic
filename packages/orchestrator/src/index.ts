@@ -3,7 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 import { runInvestigation } from "./investigate.js";
-import { closeApp, enterText, hotRestart, launchAppSession, observe, tap } from "./session.js";
+import { closeApp, enterText, hotRestart, launchAppSession, observe, reproduce, tap } from "./session.js";
 
 const server = new McpServer({ name: "flutter-medic", version: "0.0.1" });
 
@@ -16,15 +16,16 @@ server.registerTool(
   {
     title: "Investigate a Flutter app",
     description:
-      "Launches a Flutter app and runs the given interaction steps, checking for " +
-      "tier-1 anomaly signals (a runtime exception, or an expected widget that " +
-      "never appeared). Reproduces the flow 3x before reporting. Works against " +
-      "any Flutter project — the caller supplies the steps and, optionally, what " +
-      "widget key it expects to see afterward. Best when you already know exactly " +
-      "what to do and check; for open-ended exploration, use launch_app + tap / " +
-      "enter_text / observe instead, then call investigate once you know what to " +
-      "verify. If deviceId is omitted, auto-detects the single connected physical " +
-      "Android device — errors if there's none or more than one.",
+      "Launches a Flutter app fresh and runs the given interaction steps, checking " +
+      "for tier-1 anomaly signals (a runtime exception, or an expected widget that " +
+      "never appeared). Reproduces the flow 3x before reporting, then closes the " +
+      "app. Works against any Flutter project — the caller supplies the steps and, " +
+      "optionally, what widget key it expects to see afterward. Best when you " +
+      "already know exactly what to do and check and don't have a session open " +
+      "yet. If you've already explored with launch_app, use reproduce instead — " +
+      "it verifies against the app that's already running, without a full " +
+      "terminate-and-relaunch. If deviceId is omitted, auto-detects the single " +
+      "connected physical Android device — errors if there's none or more than one.",
     inputSchema: {
       deviceId: z
         .string()
@@ -126,6 +127,36 @@ server.registerTool(
     inputSchema: {},
   },
   async () => textResult(await hotRestart()),
+);
+
+server.registerTool(
+  "reproduce",
+  {
+    title: "Reproduce and verify steps against the running app",
+    description:
+      "Runs the given steps against the app already open from launch_app, 3x, " +
+      "hot-restarting between attempts, checking the same tier-1 anomaly signals " +
+      "investigate does — but never terminates or relaunches the app, since it's " +
+      "already running. Use this once exploration (observe/tap/enter_text) has " +
+      "told you what to check; use investigate instead if you don't have a " +
+      "session open yet.",
+    inputSchema: {
+      steps: z
+        .array(
+          z.object({
+            action: z.enum(["tap", "enter_text"]),
+            key: z.string().describe("The widget's ValueKey"),
+            input: z.string().optional().describe("Required for enter_text"),
+          }),
+        )
+        .describe("Interaction steps to reach the state worth observing"),
+      expectedElementKey: z
+        .string()
+        .optional()
+        .describe("If given, its absence after the steps run is treated as an anomaly"),
+    },
+  },
+  async ({ steps, expectedElementKey }) => textResult(await reproduce(steps, expectedElementKey)),
 );
 
 const transport = new StdioServerTransport();

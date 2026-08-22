@@ -13,6 +13,7 @@ import {
   waitForVmServiceUri,
 } from "./mcp-clients.js";
 import { captureLogMarker, getAndroidApplicationId, readFlutterLogSince } from "./native-log.js";
+import { reproduce as runReproduction, type InvestigationStep } from "./reproduction.js";
 
 // Session state for the granular tools (launch_app/tap/enter_text/observe/
 // hot_restart/close_app). One active session at a time — matches the MVP's
@@ -126,4 +127,25 @@ export async function hotRestart() {
   await connectDartMcpToApp(session.dartMcp, session.appPath);
   session.logMarker = await captureLogMarker(session.deviceId);
   return { message: "Hot restart complete." };
+}
+
+/**
+ * Verifies steps discovered through exploration, against the app already open
+ * from launch_app — hot-restarts between attempts like investigate() does,
+ * but never terminates or relaunches the app, since it's already running.
+ * Use this after exploring with observe/tap/enter_text, once you know what to
+ * check; use investigate() instead when you already know everything upfront
+ * and don't need a separate exploration session first.
+ */
+export async function reproduce(steps: InvestigationStep[], expectedElementKey?: string) {
+  const session = requireSession();
+  return runReproduction(
+    session.marionette,
+    session.dartMcp,
+    session.deviceId,
+    session.applicationId,
+    session.appPath,
+    steps,
+    expectedElementKey,
+  );
 }
