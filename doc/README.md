@@ -15,6 +15,7 @@ One `.md` per unit of work, in order. Each entry: what was done, why it was need
 | 009 | [Logcat backstop](./009-logcat-backstop.md) | Third tier-1 rule (`native-log-exception`) closes the gap from 007 — verified it catches exactly the error class the VM-service rule structurally can't, via the same injected-exception technique |
 | 010 | [Granular MCP tools, Phase 2 started](./010-granular-mcp-tools-phase2-start.md) | Five new tools (`launch_app`, `close_app`, `tap`, `enter_text`, `observe`, `hot_restart`) let a calling AI agent explore and plan step by step, session state held across calls; one real cleanup bug found and fixed (`close_app` wasn't actually stopping the app on-device) |
 | 011 | [Decouple CLI from example app](./011-decouple-cli-from-example-app.md) | The CLI's hardcoded killer-demo defaults (steps, expected element) moved into `examples/killer_demo_app/investigation.json` — the tool's source now has zero opinions about what app or bug it's pointed at |
+| 012 | [Second demo app; live NL investigation setup](./012-second-demo-app-and-live-nl-investigation.md) (in progress) | `examples/crash_demo_app` built — a real, synchronous build-crash, deliberately different bug shape from `killer_demo_app`. Blocked on a session restart to actually run the live, tool-by-tool NL-driven investigation proving Phase 2's architecture |
 
 ## Where things stand right now
 
