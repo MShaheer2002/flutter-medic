@@ -5,8 +5,14 @@ import { pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
-import { detectMissingExpectedElement, detectRuntimeException, type AnomalySignal } from "./anomaly-detection.js";
+import {
+  detectMissingExpectedElement,
+  detectNativeLogException,
+  detectRuntimeException,
+  type AnomalySignal,
+} from "./anomaly-detection.js";
 import { detectAndroidDevice } from "./device-detection.js";
+import { captureLogMarker, getAndroidApplicationId, readFlutterLogSince } from "./native-log.js";
 
 const MARIONETTE_MCP_BIN = join(homedir(), ".pub-cache/bin/marionette_mcp");
 const REPRODUCTION_RUNS = 3;
@@ -117,10 +123,15 @@ async function runInteractionSteps(marionette: Client, steps: InvestigationStep[
 async function runInvestigationOnce(
   marionette: Client,
   dartMcp: Client,
+  deviceId: string,
+  applicationId: string,
   params: InvestigateParams,
 ): Promise<RunResult> {
-  // Dart MCP must already be connected (before the steps run) so it's actively
-  // listening when any exception fires — see connectDartMcpToApp's docstring.
+  // Both the Dart MCP connection and this log marker must be captured BEFORE
+  // the interaction steps run, not after — see connectDartMcpToApp's docstring
+  // and doc/007 for why connecting/marking late silently misses everything.
+  const logMarker = await captureLogMarker(deviceId);
+
   await runInteractionSteps(marionette, params.steps);
 
   // Let navigation and any async work triggered by the steps settle.
@@ -128,10 +139,14 @@ async function runInvestigationOnce(
 
   const interactiveElements = toolText(await marionette.callTool({ name: "get_interactive_elements" }));
   const runtimeErrors = await getRuntimeErrors(dartMcp);
+  const nativeLog = await readFlutterLogSince(deviceId, applicationId, logMarker);
 
   const signals: AnomalySignal[] = [];
   const exceptionSignal = detectRuntimeException(runtimeErrors);
   if (exceptionSignal) signals.push(exceptionSignal);
+
+  const nativeLogSignal = detectNativeLogException(nativeLog);
+  if (nativeLogSignal) signals.push(nativeLogSignal);
 
   if (params.expectedElementKey) {
     const missingSignal = detectMissingExpectedElement(interactiveElements, params.expectedElementKey);
@@ -153,9 +168,11 @@ export async function runInvestigation(params: InvestigateParams): Promise<Evide
   const dartMcp = await connectStdioClient("dart", ["mcp-server"]);
   await connectDartMcpToApp(dartMcp, params.appPath);
 
+  const applicationId = await getAndroidApplicationId(params.appPath);
+
   const runs: RunResult[] = [];
   for (let i = 0; i < REPRODUCTION_RUNS; i++) {
-    runs.push(await runInvestigationOnce(marionette, dartMcp, params));
+    runs.push(await runInvestigationOnce(marionette, dartMcp, device.id, applicationId, params));
     if (i < REPRODUCTION_RUNS - 1) {
       await marionette.callTool({ name: "hot_restart" });
       await new Promise((r) => setTimeout(r, 1500));

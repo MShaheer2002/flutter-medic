@@ -32,3 +32,27 @@ export function detectRuntimeException(runtimeErrorsText: string): AnomalySignal
     description: `A runtime exception was detected: ${runtimeErrorsText.slice(0, 500)}`,
   };
 }
+
+/**
+ * Flags any "E/flutter" native log output (Android only). This is a backstop
+ * for exception classes detectRuntimeException structurally can't see — see
+ * doc/007 — an unhandled fire-and-forget async error never reaches the VM
+ * service's Flutter.Error/Stderr streams, but the engine still prints it to
+ * native platform logging (adb logcat), which this checks directly.
+ */
+export function detectNativeLogException(logText: string): AnomalySignal | null {
+  // logcat prints its own "--------- beginning of <buffer>" marker lines when
+  // a requested time range starts before the buffer has content — not a real
+  // log entry, has to be filtered out separately from genuine app output.
+  const realLines = logText
+    .split("\n")
+    .filter((line) => line.trim() !== "" && !line.startsWith("---------"));
+
+  if (realLines.length === 0) {
+    return null;
+  }
+  return {
+    rule: "native-log-exception",
+    description: `An error was logged via the native "flutter" log tag: ${realLines.join("\n").slice(0, 500)}`,
+  };
+}
