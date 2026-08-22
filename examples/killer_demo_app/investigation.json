@@ -1,0 +1,9 @@
+{
+  "goal": "Verify tasks appear on Home after login; find out why if they don't.",
+  "steps": [
+    { "action": "enter_text", "key": "email_field", "input": "dev@flutter-medic.test" },
+    { "action": "enter_text", "key": "password_field", "input": "hunter2" },
+    { "action": "tap", "key": "login_button" }
+  ],
+  "expectedElementKey": "tasks_list"
+}

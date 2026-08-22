@@ -14,6 +14,7 @@ One `.md` per unit of work, in order. Each entry: what was done, why it was need
 | 008 | [Device auto-detection](./008-device-auto-detection.md) | `deviceId` is now optional — auto-detects the single connected physical Android device, errors clearly on zero or multiple matches |
 | 009 | [Logcat backstop](./009-logcat-backstop.md) | Third tier-1 rule (`native-log-exception`) closes the gap from 007 — verified it catches exactly the error class the VM-service rule structurally can't, via the same injected-exception technique |
 | 010 | [Granular MCP tools, Phase 2 started](./010-granular-mcp-tools-phase2-start.md) | Five new tools (`launch_app`, `close_app`, `tap`, `enter_text`, `observe`, `hot_restart`) let a calling AI agent explore and plan step by step, session state held across calls; one real cleanup bug found and fixed (`close_app` wasn't actually stopping the app on-device) |
+| 011 | [Decouple CLI from example app](./011-decouple-cli-from-example-app.md) | The CLI's hardcoded killer-demo defaults (steps, expected element) moved into `examples/killer_demo_app/investigation.json` — the tool's source now has zero opinions about what app or bug it's pointed at |
 
 ## Where things stand right now
 

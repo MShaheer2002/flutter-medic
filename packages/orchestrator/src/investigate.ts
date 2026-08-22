@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 
@@ -149,24 +150,22 @@ export async function runInvestigation(params: InvestigateParams): Promise<Evide
 }
 
 // CLI entry point — only runs when this file is executed directly, not when imported.
+// Deliberately app-agnostic: what to check comes entirely from the config file,
+// not a hardcoded default — the tool doesn't know or care what bug it's looking
+// for until it's told.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const [appPath, deviceId] = process.argv.slice(2);
-  if (!appPath) {
-    console.error("Usage: investigate <app-path> [device-id]");
+  const [appPath, configPath, deviceId] = process.argv.slice(2);
+  if (!appPath || !configPath) {
+    console.error("Usage: investigate <app-path> <config.json> [device-id]");
+    console.error('config.json shape: { "goal": string, "steps": InvestigationStep[], "expectedElementKey"?: string }');
     process.exit(1);
   }
 
-  runInvestigation({
-    deviceId,
-    appPath,
-    goal: "Verify tasks appear on Home after login; find out why if they don't.",
-    steps: [
-      { action: "enter_text", key: "email_field", input: "dev@flutter-medic.test" },
-      { action: "enter_text", key: "password_field", input: "hunter2" },
-      { action: "tap", key: "login_button" },
-    ],
-    expectedElementKey: "tasks_list",
-  })
+  const config: Pick<InvestigateParams, "goal" | "steps" | "expectedElementKey"> = JSON.parse(
+    await readFile(configPath, "utf-8"),
+  );
+
+  runInvestigation({ deviceId, appPath, ...config })
     .then((report) => {
       console.log(JSON.stringify(report, null, 2));
       process.exitCode = report.verdict === "confirmed" ? 0 : 1;
