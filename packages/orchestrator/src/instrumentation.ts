@@ -17,17 +17,20 @@ function resolveInstrumentedPath(appPath: string, relativeFilePath: string): str
 }
 
 /**
- * Inserts `code` as a new line after `afterLine` (0 = insert as the first
- * line). The original content is backed up in `backups` on first touch of a
- * given file, so revertFile/revertAll can restore it exactly — never
- * overwrites an existing backup, so calling this twice on the same file
- * before reverting stacks edits without losing the true original.
+ * Inserts `code` as a new line at `atLine` — a 0-indexed position, so the
+ * new line lands BEFORE whatever line currently sits there (atLine=0 means
+ * "insert as the new first line", atLine=N means "insert as the new line
+ * N+1, pushing the old line N+1 and everything after it down by one"). The
+ * original content is backed up in `backups` on first touch of a given
+ * file, so revertFile/revertAll can restore it exactly — never overwrites
+ * an existing backup, so calling this twice on the same file before
+ * reverting stacks edits without losing the true original.
  */
 export async function instrumentFile(
   backups: Map<string, string>,
   appPath: string,
   relativeFilePath: string,
-  afterLine: number,
+  atLine: number,
   code: string,
 ): Promise<void> {
   const absPath = resolveInstrumentedPath(appPath, relativeFilePath);
@@ -36,10 +39,10 @@ export async function instrumentFile(
   }
   const current = await readFile(absPath, "utf-8");
   const lines = current.split("\n");
-  if (afterLine < 0 || afterLine > lines.length) {
-    throw new Error(`Line ${afterLine} is out of range for ${relativeFilePath} (${lines.length} lines)`);
+  if (atLine < 0 || atLine > lines.length) {
+    throw new Error(`Line ${atLine} is out of range for ${relativeFilePath} (${lines.length} lines)`);
   }
-  lines.splice(afterLine, 0, code);
+  lines.splice(atLine, 0, code);
   await writeFile(absPath, lines.join("\n"), "utf-8");
 }
 

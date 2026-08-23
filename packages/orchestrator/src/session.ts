@@ -279,10 +279,12 @@ export async function hotReload() {
  * inside it. Call revert_instrumentation when done — close_app also reverts
  * automatically as a safety net if you forget.
  */
-export async function instrumentCode(filePath: string, afterLine: number, code: string) {
+export async function instrumentCode(filePath: string, atLine: number, code: string) {
   const session = requireSession();
-  await instrumentFile(session.instrumentedFiles, session.appPath, filePath, afterLine, code);
-  return { message: `Inserted instrumentation into ${filePath} after line ${afterLine}. Call hot_reload (or hot_restart) to pick it up.` };
+  await instrumentFile(session.instrumentedFiles, session.appPath, filePath, atLine, code);
+  return {
+    message: `Inserted instrumentation into ${filePath} as the new line ${atLine + 1}. Call hot_reload (or hot_restart) to pick it up.`,
+  };
 }
 
 /** Restores a file instrument_code touched back to its original content. Omit filePath to revert everything. */

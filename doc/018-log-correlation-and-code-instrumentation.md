@@ -55,6 +55,20 @@ constraint, not the mechanism:**
   forgotten `revert_instrumentation` call can never leave the app's real
   source mutated after the session ends.
 
+**Real bug found via live testing, fixed**: the first live test used
+`afterLine=22` intending "insert after 0-indexed line 22" — but the
+implementation was `lines.splice(afterLine, 0, code)`, which inserts
+*before* whatever's at that index, not after it. The print landed one line
+too early, before the variable it referenced was even declared. The self-check
+alone never caught this: it asserted against whatever `splice` actually
+produced rather than independently checking the parameter against its own
+documented meaning. Fixed by renaming the parameter to `atLine` and rewriting
+its description around what the code actually does (a 0-indexed insert
+*position*, not "insert after this line") instead of changing the splice
+logic itself — the safest fix was making the name honest, not the behavior
+different. Confirmed correct on retest: `atLine: 23` landed the new line
+exactly as the file's line 24, immediately after the target line.
+
 **Known gap, not fixed**: `native-log.ts`'s logcat capture is filtered to
 `flutter:E` (error level only) — deliberate, to avoid noise for the tier-1
 `native-log-exception` rule (009). A plain `print()` statement inserted via
@@ -76,7 +90,16 @@ capture) later if this gets used for real debugging.
   clears its backup entry, reverting a never-touched file returns `false`
   without erroring, a path-traversal attempt (`../../etc/passwd`) is
   refused, and `revertAll` correctly restores multiple files at once.
-- Live device verification: see below.
+- **Live device verification, both pieces, against `killer_demo_app`:**
+  - `investigate`'s `report` field rendered a correct "Timeline" section —
+    network events in true chronological order (`+0ms` through `+726ms`),
+    consistent with the confirmed `expected-element-missing` finding.
+  - `instrument_code` → `hot_reload` → trigger the flow → confirmed via raw
+    `adb logcat` that the inserted print fired with real data: `"fetched 5
+    tasks but _tasks stays 0"` — direct, first-hand confirmation of the
+    app's actual bug (the fetch succeeds, the assignment never happens).
+  - `revert_instrumentation` restored the file to a byte-for-byte match of
+    the committed original (`git diff` empty afterward).
 
 ## Files modified
 

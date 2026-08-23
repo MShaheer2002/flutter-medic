@@ -351,11 +351,18 @@ server.registerTool(
       "Always call revert_instrumentation when done — close_app also reverts automatically as a safety net.",
     inputSchema: {
       filePath: z.string().describe("Path to the file, relative to the app root, e.g. \"lib/home_screen.dart\""),
-      afterLine: z.number().describe("Insert the new line after this 0-indexed line number (0 = insert first)"),
+      atLine: z
+        .number()
+        .describe(
+          "0-indexed insert position: the new line becomes line atLine+1 (1-indexed), pushing the " +
+            "existing line at that position and everything after it down by one. atLine=0 inserts as the " +
+            "new first line. Read the file first to pick the right position — e.g. to insert right after " +
+            "the file's 1-indexed line 23, pass atLine=23.",
+        ),
       code: z.string().describe("The line of code to insert, e.g. 'print(\"DEBUG: tasks=$_tasks\");'"),
     },
   },
-  async ({ filePath, afterLine, code }) => textResult(await instrumentCode(filePath, afterLine, code)),
+  async ({ filePath, atLine, code }) => textResult(await instrumentCode(filePath, atLine, code)),
 );
 
 server.registerTool(
