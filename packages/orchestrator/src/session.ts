@@ -15,6 +15,7 @@ import {
 } from "./mcp-clients.js";
 import { captureLogMarker, getAndroidApplicationId, readFlutterLogSince } from "./native-log.js";
 import { reproduce as runReproduction, type InvestigationStep } from "./reproduction.js";
+import { generateReport } from "./report.js";
 
 // Session state for the granular tools (launch_app/tap/enter_text/observe/
 // hot_restart/close_app). One active session at a time — matches the MVP's
@@ -150,7 +151,7 @@ export async function hotRestart() {
  */
 export async function reproduce(steps: InvestigationStep[], expectedElementKey?: string) {
   const session = requireSession();
-  return runReproduction(
+  const result = await runReproduction(
     session.marionette,
     session.dartMcp,
     session.deviceId,
@@ -159,6 +160,7 @@ export async function reproduce(steps: InvestigationStep[], expectedElementKey?:
     steps,
     expectedElementKey,
   );
+  return { ...result, report: generateReport(result) };
 }
 
 export async function doubleTap(matcher: ElementMatcher, delay?: number) {

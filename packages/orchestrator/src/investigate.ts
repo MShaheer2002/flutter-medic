@@ -12,6 +12,7 @@ import {
 } from "./mcp-clients.js";
 import { getAndroidApplicationId } from "./native-log.js";
 import { reproduce, type InvestigationStep } from "./reproduction.js";
+import { generateReport } from "./report.js";
 
 export type { InvestigationStep };
 
@@ -36,6 +37,8 @@ export interface EvidenceReport {
   reproductionRuns: number;
   verdict: "confirmed" | "not-reproduced";
   runs: import("./reproduction.js").RunResult[];
+  /** Human-readable markdown summary of the findings above. */
+  report: string;
 }
 
 export async function runInvestigation(params: InvestigateParams): Promise<EvidenceReport> {
@@ -67,7 +70,13 @@ export async function runInvestigation(params: InvestigateParams): Promise<Evide
   appProcess.kill();
   await forceStopApp(device.id, applicationId);
 
-  return { goal: params.goal, deviceId: device.id, deviceName: device.name, ...result };
+  return {
+    goal: params.goal,
+    deviceId: device.id,
+    deviceName: device.name,
+    ...result,
+    report: generateReport(result, params.goal),
+  };
 }
 
 // CLI entry point — only runs when this file is executed directly, not when imported.
