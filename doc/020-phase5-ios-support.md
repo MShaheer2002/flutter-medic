@@ -96,7 +96,10 @@ than a guessed implementation using tooling (libimobiledevice, or unverified
 ## Status
 
 Builds clean. Bundle-id parsing and log-marker formatting self-checked
-against real files. Device-detection regression-checked live. **The iOS
-Simulator path itself — `xcrun simctl` log capture and force-stop — is
-unverified and should be treated as a draft until run against a real
-simulator.**
+against real files. Device-detection regression-checked live, then a full
+`investigate()` run through the real MCP tool against `killer_demo_app`
+confirmed the Android path (device resolution → launch → reproduce →
+network correlation → timeline → report) is unaffected by the refactor —
+identical, correct behavior to every prior doc. **The iOS Simulator path
+itself — `xcrun simctl` log capture and force-stop — is still unverified
+and should be treated as a draft until run against a real simulator.**
