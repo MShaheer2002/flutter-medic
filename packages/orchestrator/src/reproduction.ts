@@ -25,6 +25,7 @@ export interface RunResult {
   signals: AnomalySignal[];
   interactiveElements: string;
   networkActivity: string;
+  nativeLog: string;
 }
 
 export interface ReproductionResult {
@@ -107,7 +108,7 @@ async function runOnce(
     await saveBaseline(appPath, steps, expectedElementKey, interactiveElements).catch(() => {});
   }
 
-  return { anomalyDetected: signals.length > 0, signals, interactiveElements, networkActivity };
+  return { anomalyDetected: signals.length > 0, signals, interactiveElements, networkActivity, nativeLog };
 }
 
 /**

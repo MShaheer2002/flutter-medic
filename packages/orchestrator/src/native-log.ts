@@ -46,7 +46,11 @@ export async function readFlutterLogSince(
     // Fall through and read unscoped; still timestamp-bounded.
   }
 
-  const args = ["-s", deviceId, "logcat", "-d", "-T", marker, "-s", "flutter:E"];
+  // "-v epoch" prefixes each line with a raw epoch-seconds timestamp instead
+  // of the default no-year local-clock format — the only way to correlate
+  // these lines against networkActivity's own epoch-microsecond timestamps
+  // (log-correlation.ts) without guessing at device/host timezone alignment.
+  const args = ["-s", deviceId, "logcat", "-v", "epoch", "-d", "-T", marker, "-s", "flutter:E"];
   if (pid) args.push("--pid", pid);
 
   const { stdout } = await execFileAsync("adb", args);

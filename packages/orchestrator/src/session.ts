@@ -13,6 +13,7 @@ import {
   toolText,
   waitForVmServiceUri,
 } from "./mcp-clients.js";
+import { instrumentFile, revertAll, revertFile } from "./instrumentation.js";
 import { captureLogMarker, getAndroidApplicationId, readFlutterLogSince } from "./native-log.js";
 import { reproduce as runReproduction, type InvestigationStep } from "./reproduction.js";
 import { generateReport } from "./report.js";
@@ -34,6 +35,8 @@ interface Session {
   deviceId: string;
   deviceName?: string;
   logMarker: string;
+  /** Original content of any files instrument_code has touched, keyed by absolute path. */
+  instrumentedFiles: Map<string, string>;
 }
 
 let activeSession: Session | null = null;
@@ -82,6 +85,7 @@ export async function launchAppSession(appPath: string, deviceId?: string) {
     deviceId: device.id,
     deviceName: device.name,
     logMarker,
+    instrumentedFiles: new Map(),
   };
 
   return { deviceId: device.id, deviceName: device.name, appPath };
@@ -91,13 +95,22 @@ export async function closeApp() {
   if (!activeSession) {
     return { message: "No active session — nothing to close." };
   }
-  const { marionette, dartMcp, appProcess, deviceId, applicationId } = activeSession;
+  const { marionette, dartMcp, appProcess, deviceId, applicationId, instrumentedFiles } = activeSession;
+  // Safety net: restore anything still instrumented, even if the caller
+  // forgot to call revert_instrumentation — never leave the app's real
+  // source files mutated after the session ends.
+  const reverted = await revertAll(instrumentedFiles);
   await marionette.close();
   await dartMcp.close();
   appProcess.kill();
   await forceStopApp(deviceId, applicationId);
   activeSession = null;
-  return { message: "Session closed." };
+  return {
+    message:
+      reverted.length > 0
+        ? `Session closed. Auto-reverted ${reverted.length} still-instrumented file(s): ${reverted.join(", ")}`
+        : "Session closed.",
+  };
 }
 
 export async function tap(key: string) {
@@ -256,4 +269,31 @@ export async function hotReload() {
   const session = requireSession();
   await session.marionette.callTool({ name: "hot_reload" });
   return { message: "Hot reload complete." };
+}
+
+/**
+ * Temporary code instrumentation (Phase 3, §13) — for bugs that don't show
+ * up in any existing evidence stream, temporarily insert extra logging into
+ * the app's own source, then hot_reload/hot_restart to pick it up and
+ * observe again. filePath is relative to the app root and must resolve
+ * inside it. Call revert_instrumentation when done — close_app also reverts
+ * automatically as a safety net if you forget.
+ */
+export async function instrumentCode(filePath: string, afterLine: number, code: string) {
+  const session = requireSession();
+  await instrumentFile(session.instrumentedFiles, session.appPath, filePath, afterLine, code);
+  return { message: `Inserted instrumentation into ${filePath} after line ${afterLine}. Call hot_reload (or hot_restart) to pick it up.` };
+}
+
+/** Restores a file instrument_code touched back to its original content. Omit filePath to revert everything. */
+export async function revertInstrumentation(filePath?: string) {
+  const session = requireSession();
+  if (filePath) {
+    const reverted = await revertFile(session.instrumentedFiles, session.appPath, filePath);
+    return { message: reverted ? `Reverted ${filePath}.` : `${filePath} was not instrumented — nothing to revert.` };
+  }
+  const reverted = await revertAll(session.instrumentedFiles);
+  return {
+    message: reverted.length > 0 ? `Reverted ${reverted.length} file(s): ${reverted.join(", ")}` : "Nothing was instrumented.",
+  };
 }

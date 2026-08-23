@@ -1,4 +1,5 @@
 import type { AnomalySignal } from "./anomaly-detection.js";
+import { buildTimeline } from "./log-correlation.js";
 import type { ReproductionResult, RunResult } from "./reproduction.js";
 
 const RULE_LABELS: Record<string, string> = {
@@ -49,6 +50,18 @@ export function generateReport(result: ReproductionResult, goal?: string): strin
   for (const { signal, count } of signals) {
     const label = RULE_LABELS[signal.rule] ?? signal.rule;
     lines.push(`- **${label}** (${count}/${result.reproductionRuns} runs): ${signal.description}`);
+  }
+
+  // One representative timeline (the first anomalous run, so it lines up
+  // with the findings above) — not one per run, which would just repeat the
+  // same cross-referenced evidence reproductionRuns times.
+  const representativeRun = result.runs.find((r) => r.anomalyDetected) ?? result.runs[0];
+  const timeline = buildTimeline(representativeRun.nativeLog, representativeRun.networkActivity);
+  if (timeline.length > 0) {
+    lines.push("");
+    lines.push("## Timeline (native log + network, cross-referenced)");
+    lines.push("");
+    for (const entry of timeline) lines.push(`- ${entry}`);
   }
 
   return lines.join("\n");

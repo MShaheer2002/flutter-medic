@@ -10,6 +10,7 @@ import {
   getLogs,
   hotReload,
   hotRestart,
+  instrumentCode,
   launchAppSession,
   longPress,
   observe,
@@ -17,6 +18,7 @@ import {
   pressBackButton,
   pressKey,
   reproduce,
+  revertInstrumentation,
   scrollTo,
   secondaryTap,
   swipe,
@@ -335,6 +337,37 @@ server.registerTool(
     inputSchema: {},
   },
   async () => textResult(await hotReload()),
+);
+
+server.registerTool(
+  "instrument_code",
+  {
+    title: "Temporarily instrument app source",
+    description:
+      "For bugs that don't show up in any existing evidence stream (interactive elements, runtime " +
+      "errors, native log, network activity): temporarily inserts a line of code (e.g. a print statement) " +
+      "into the app's own source, so a hot_reload/hot_restart + observe afterward can see something the " +
+      "passive evidence doesn't capture. filePath is relative to the app root and must resolve inside it. " +
+      "Always call revert_instrumentation when done — close_app also reverts automatically as a safety net.",
+    inputSchema: {
+      filePath: z.string().describe("Path to the file, relative to the app root, e.g. \"lib/home_screen.dart\""),
+      afterLine: z.number().describe("Insert the new line after this 0-indexed line number (0 = insert first)"),
+      code: z.string().describe("The line of code to insert, e.g. 'print(\"DEBUG: tasks=$_tasks\");'"),
+    },
+  },
+  async ({ filePath, afterLine, code }) => textResult(await instrumentCode(filePath, afterLine, code)),
+);
+
+server.registerTool(
+  "revert_instrumentation",
+  {
+    title: "Revert temporary code instrumentation",
+    description: "Restores a file instrument_code touched back to its original content. Omit filePath to revert everything.",
+    inputSchema: {
+      filePath: z.string().optional().describe("Path relative to the app root. Omit to revert all instrumented files."),
+    },
+  },
+  async ({ filePath }) => textResult(await revertInstrumentation(filePath)),
 );
 
 const transport = new StdioServerTransport();
