@@ -24,6 +24,7 @@ import {
   swipe,
   takeScreenshots,
   tap,
+  verifyFix,
 } from "./session.js";
 
 const server = new McpServer({ name: "flutter-medic", version: "0.0.1" });
@@ -375,6 +376,48 @@ server.registerTool(
     },
   },
   async ({ filePath }) => textResult(await revertInstrumentation(filePath)),
+);
+
+server.registerTool(
+  "verify_fix",
+  {
+    title: "Verify a fix (hot-reload-and-reverify)",
+    description:
+      "Phase 4's hot-reload-and-reverify cycle: after a coding agent edits the app's source to fix a bug " +
+      "found by investigate/reproduce, call this to check whether it worked. Re-checks the same tier-1 " +
+      "rules (runtime exception, native log exception, and the expected element if given). Returns " +
+      "fixed: true when no signal fires. Two reload modes — pick based on where the bug lives: " +
+      "'hot_reload' (default) verifies in place, preserving navigation state, but does NOT re-trigger " +
+      "lifecycle methods like initState — useless for a fix inside a function that already ran once " +
+      "(e.g. an initState-triggered fetch), since the fixed code just won't execute again. For that case " +
+      "use 'hot_restart' with the original `steps` — it resets state and replays them, so the fixed code " +
+      "actually runs.",
+    inputSchema: {
+      expectedElementKey: z
+        .string()
+        .optional()
+        .describe("If given, its continued absence is treated as the fix not having worked"),
+      reloadMode: z
+        .enum(["hot_reload", "hot_restart"])
+        .optional()
+        .describe(
+          "'hot_reload' (default): verify in place, preserves state, but won't re-run lifecycle methods " +
+            "like initState. 'hot_restart': resets state and replays `steps` — required for bugs inside " +
+            "one-shot init logic that already executed.",
+        ),
+      steps: z
+        .array(
+          z.object({
+            action: z.enum(["tap", "enter_text"]),
+            key: z.string().describe("The widget's ValueKey"),
+            input: z.string().optional().describe("Required for enter_text"),
+          }),
+        )
+        .optional()
+        .describe("Only used with reloadMode: 'hot_restart' — the original steps to replay after restarting"),
+    },
+  },
+  async ({ expectedElementKey, reloadMode, steps }) => textResult(await verifyFix(expectedElementKey, reloadMode, steps)),
 );
 
 const transport = new StdioServerTransport();

@@ -35,7 +35,7 @@ export interface ReproductionResult {
   runs: RunResult[];
 }
 
-async function runInteractionSteps(marionette: Client, steps: InvestigationStep[]) {
+export async function runInteractionSteps(marionette: Client, steps: InvestigationStep[]) {
   for (const step of steps) {
     if (step.action === "enter_text") {
       await marionette.callTool({ name: "enter_text", arguments: { key: step.key, input: step.input ?? "" } });
@@ -52,7 +52,7 @@ async function runInteractionSteps(marionette: Client, steps: InvestigationStep[
  * Polls until two consecutive reads match (the UI has actually stopped
  * changing) instead of guessing a bigger constant.
  */
-async function waitForStableUi(marionette: Client, maxWaitMs = 5000, pollIntervalMs = 300): Promise<string> {
+export async function waitForStableUi(marionette: Client, maxWaitMs = 5000, pollIntervalMs = 300): Promise<string> {
   let previous: string | null = null;
   const deadline = Date.now() + maxWaitMs;
   while (Date.now() < deadline) {

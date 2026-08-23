@@ -1,6 +1,12 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 
+import {
+  detectMissingExpectedElement,
+  detectNativeLogException,
+  detectRuntimeException,
+  type AnomalySignal,
+} from "./anomaly-detection.js";
 import { detectAndroidDevice } from "./device-detection.js";
 import {
   MARIONETTE_MCP_BIN,
@@ -15,7 +21,12 @@ import {
 } from "./mcp-clients.js";
 import { instrumentFile, revertAll, revertFile } from "./instrumentation.js";
 import { captureLogMarker, getAndroidApplicationId, readFlutterLogSince } from "./native-log.js";
-import { reproduce as runReproduction, type InvestigationStep } from "./reproduction.js";
+import {
+  reproduce as runReproduction,
+  runInteractionSteps,
+  waitForStableUi,
+  type InvestigationStep,
+} from "./reproduction.js";
 import { generateReport } from "./report.js";
 
 // Session state for the granular tools (launch_app/tap/enter_text/observe/
@@ -297,5 +308,66 @@ export async function revertInstrumentation(filePath?: string) {
   const reverted = await revertAll(session.instrumentedFiles);
   return {
     message: reverted.length > 0 ? `Reverted ${reverted.length} file(s): ${reverted.join(", ")}` : "Nothing was instrumented.",
+  };
+}
+
+/**
+ * Phase 4 (§13) "hot-reload-and-reverify cycle" — after a coding agent edits
+ * the app's source to fix a bug found by investigate/reproduce, call this to
+ * check whether it worked.
+ *
+ * Two modes, because live testing found hot_reload alone isn't always
+ * enough: hot_reload preserves widget state, so it verifies in place without
+ * losing navigation — but a fix inside a function that already ran once
+ * (e.g. an initState-triggered fetch) won't re-run just because the code
+ * changed; hot_reload doesn't re-trigger lifecycle methods. For that class
+ * of bug, pass reloadMode: "hot_restart" and the original `steps` — this
+ * resets state and replays them, so the fixed code actually executes again.
+ * Use "hot_reload" (the default) when the bug is in something re-evaluated
+ * on every build, where losing navigation state would be wasteful.
+ *
+ * Uses waitForStableUi for the interactiveElements read, same as
+ * reproduction.ts — best-effort, does not fully close the known
+ * post-hot_restart evidence-staleness gap from doc/016.
+ */
+export async function verifyFix(
+  expectedElementKey?: string,
+  reloadMode: "hot_reload" | "hot_restart" = "hot_reload",
+  steps?: InvestigationStep[],
+) {
+  const session = requireSession();
+  if (reloadMode === "hot_restart") {
+    await session.marionette.callTool({ name: "hot_restart" });
+    await new Promise((r) => setTimeout(r, 1500));
+    await connectDartMcpToApp(session.dartMcp, session.appPath);
+    if (steps) await runInteractionSteps(session.marionette, steps);
+  } else {
+    await session.marionette.callTool({ name: "hot_reload" });
+    await new Promise((r) => setTimeout(r, 500));
+  }
+
+  const interactiveElements = await waitForStableUi(session.marionette);
+  const runtimeErrors = await getRuntimeErrors(session.dartMcp);
+  const nativeLog = await readFlutterLogSince(session.deviceId, session.applicationId, session.logMarker);
+  const networkActivity = await getNetworkActivity(session.dartMcp);
+  session.logMarker = await captureLogMarker(session.deviceId);
+
+  const signals: AnomalySignal[] = [];
+  const exceptionSignal = detectRuntimeException(runtimeErrors);
+  if (exceptionSignal) signals.push(exceptionSignal);
+  const nativeLogSignal = detectNativeLogException(nativeLog);
+  if (nativeLogSignal) signals.push(nativeLogSignal);
+  if (expectedElementKey) {
+    const missingSignal = detectMissingExpectedElement(interactiveElements, expectedElementKey);
+    if (missingSignal) signals.push(missingSignal);
+  }
+
+  return {
+    fixed: signals.length === 0,
+    signals,
+    interactiveElements,
+    runtimeErrors,
+    nativeLog,
+    networkActivity,
   };
 }
