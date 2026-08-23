@@ -1,16 +1,15 @@
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
-import { detectAndroidDevice } from "./device-detection.js";
+import { resolveDevice } from "./device-detection.js";
 import {
   MARIONETTE_MCP_BIN,
   connectDartMcpToApp,
   connectStdioClient,
-  forceStopApp,
   launchApp,
   waitForVmServiceUri,
 } from "./mcp-clients.js";
-import { getAndroidApplicationId } from "./native-log.js";
+import { forceStopApp, getApplicationId } from "./platform-support.js";
 import { reproduce, type InvestigationStep } from "./reproduction.js";
 import { generateReport } from "./report.js";
 
@@ -42,7 +41,7 @@ export interface EvidenceReport {
 }
 
 export async function runInvestigation(params: InvestigateParams): Promise<EvidenceReport> {
-  const device = params.deviceId ? { id: params.deviceId, name: undefined } : await detectAndroidDevice();
+  const device = await resolveDevice(params.deviceId);
 
   const appProcess = launchApp(device.id, params.appPath);
   const vmServiceUri = await waitForVmServiceUri(appProcess);
@@ -53,12 +52,14 @@ export async function runInvestigation(params: InvestigateParams): Promise<Evide
   const dartMcp = await connectStdioClient("dart", ["mcp-server"]);
   await connectDartMcpToApp(dartMcp, params.appPath);
 
-  const applicationId = await getAndroidApplicationId(params.appPath);
+  const applicationId = await getApplicationId(device.platform, params.appPath);
 
   const result = await reproduce(
     marionette,
     dartMcp,
+    device.platform,
     device.id,
+    device.isSimulator,
     applicationId,
     params.appPath,
     params.steps,
@@ -68,7 +69,7 @@ export async function runInvestigation(params: InvestigateParams): Promise<Evide
   await marionette.close();
   await dartMcp.close();
   appProcess.kill();
-  await forceStopApp(device.id, applicationId);
+  await forceStopApp(device.platform, device.id, device.isSimulator, applicationId);
 
   return {
     goal: params.goal,

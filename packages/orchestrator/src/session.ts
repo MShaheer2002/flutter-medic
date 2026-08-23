@@ -7,12 +7,11 @@ import {
   detectRuntimeException,
   type AnomalySignal,
 } from "./anomaly-detection.js";
-import { detectAndroidDevice } from "./device-detection.js";
+import { resolveDevice, type DevicePlatform } from "./device-detection.js";
 import {
   MARIONETTE_MCP_BIN,
   connectDartMcpToApp,
   connectStdioClient,
-  forceStopApp,
   getNetworkActivity,
   getRuntimeErrors,
   launchApp as spawnFlutterRun,
@@ -20,7 +19,7 @@ import {
   waitForVmServiceUri,
 } from "./mcp-clients.js";
 import { instrumentFile, revertAll, revertFile } from "./instrumentation.js";
-import { captureLogMarker, getAndroidApplicationId, readFlutterLogSince } from "./native-log.js";
+import { captureLogMarker, forceStopApp, getApplicationId, readNativeLogSince } from "./platform-support.js";
 import {
   reproduce as runReproduction,
   runInteractionSteps,
@@ -43,8 +42,10 @@ interface Session {
   appProcess: ChildProcessWithoutNullStreams;
   appPath: string;
   applicationId: string;
+  platform: DevicePlatform;
   deviceId: string;
   deviceName?: string;
+  isSimulator: boolean;
   logMarker: string;
   /** Original content of any files instrument_code has touched, keyed by absolute path. */
   instrumentedFiles: Map<string, string>;
@@ -73,7 +74,7 @@ export async function launchAppSession(appPath: string, deviceId?: string) {
     throw new Error("A session is already active. Call close_app before launching another.");
   }
 
-  const device = deviceId ? { id: deviceId, name: undefined } : await detectAndroidDevice();
+  const device = await resolveDevice(deviceId);
 
   const appProcess = spawnFlutterRun(device.id, appPath);
   const vmServiceUri = await waitForVmServiceUri(appProcess);
@@ -84,8 +85,8 @@ export async function launchAppSession(appPath: string, deviceId?: string) {
   const dartMcp = await connectStdioClient("dart", ["mcp-server"]);
   await connectDartMcpToApp(dartMcp, appPath);
 
-  const applicationId = await getAndroidApplicationId(appPath);
-  const logMarker = await captureLogMarker(device.id);
+  const applicationId = await getApplicationId(device.platform, appPath);
+  const logMarker = await captureLogMarker(device.platform, device.id);
 
   activeSession = {
     marionette,
@@ -93,8 +94,10 @@ export async function launchAppSession(appPath: string, deviceId?: string) {
     appProcess,
     appPath,
     applicationId,
+    platform: device.platform,
     deviceId: device.id,
     deviceName: device.name,
+    isSimulator: device.isSimulator,
     logMarker,
     instrumentedFiles: new Map(),
   };
@@ -106,7 +109,7 @@ export async function closeApp() {
   if (!activeSession) {
     return { message: "No active session — nothing to close." };
   }
-  const { marionette, dartMcp, appProcess, deviceId, applicationId, instrumentedFiles } = activeSession;
+  const { marionette, dartMcp, appProcess, platform, deviceId, isSimulator, applicationId, instrumentedFiles } = activeSession;
   // Safety net: restore anything still instrumented, even if the caller
   // forgot to call revert_instrumentation — never leave the app's real
   // source files mutated after the session ends.
@@ -114,7 +117,7 @@ export async function closeApp() {
   await marionette.close();
   await dartMcp.close();
   appProcess.kill();
-  await forceStopApp(deviceId, applicationId);
+  await forceStopApp(platform, deviceId, isSimulator, applicationId);
   activeSession = null;
   return {
     message:
@@ -146,10 +149,16 @@ export async function observe() {
 
   const interactiveElements = toolText(await session.marionette.callTool({ name: "get_interactive_elements" }));
   const runtimeErrors = await getRuntimeErrors(session.dartMcp);
-  const nativeLog = await readFlutterLogSince(session.deviceId, session.applicationId, session.logMarker);
+  const nativeLog = await readNativeLogSince(
+    session.platform,
+    session.deviceId,
+    session.isSimulator,
+    session.applicationId,
+    session.logMarker,
+  );
   const networkActivity = await getNetworkActivity(session.dartMcp);
 
-  session.logMarker = await captureLogMarker(session.deviceId);
+  session.logMarker = await captureLogMarker(session.platform, session.deviceId);
 
   return { interactiveElements, runtimeErrors, nativeLog, networkActivity };
 }
@@ -161,7 +170,7 @@ export async function hotRestart() {
   // New isolate after restart — Dart MCP's DTD connection needs re-establishing,
   // same lesson as investigate.ts and doc/007.
   await connectDartMcpToApp(session.dartMcp, session.appPath);
-  session.logMarker = await captureLogMarker(session.deviceId);
+  session.logMarker = await captureLogMarker(session.platform, session.deviceId);
   return { message: "Hot restart complete." };
 }
 
@@ -178,7 +187,9 @@ export async function reproduce(steps: InvestigationStep[], expectedElementKey?:
   const result = await runReproduction(
     session.marionette,
     session.dartMcp,
+    session.platform,
     session.deviceId,
+    session.isSimulator,
     session.applicationId,
     session.appPath,
     steps,
@@ -348,9 +359,15 @@ export async function verifyFix(
 
   const interactiveElements = await waitForStableUi(session.marionette);
   const runtimeErrors = await getRuntimeErrors(session.dartMcp);
-  const nativeLog = await readFlutterLogSince(session.deviceId, session.applicationId, session.logMarker);
+  const nativeLog = await readNativeLogSince(
+    session.platform,
+    session.deviceId,
+    session.isSimulator,
+    session.applicationId,
+    session.logMarker,
+  );
   const networkActivity = await getNetworkActivity(session.dartMcp);
-  session.logMarker = await captureLogMarker(session.deviceId);
+  session.logMarker = await captureLogMarker(session.platform, session.deviceId);
 
   const signals: AnomalySignal[] = [];
   const exceptionSignal = detectRuntimeException(runtimeErrors);

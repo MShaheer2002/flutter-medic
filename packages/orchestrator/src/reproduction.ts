@@ -8,8 +8,9 @@ import {
   type AnomalySignal,
 } from "./anomaly-detection.js";
 import { loadBaseline, saveBaseline } from "./baseline.js";
+import type { DevicePlatform } from "./device-detection.js";
 import { connectDartMcpToApp, getNetworkActivity, getRuntimeErrors, toolText } from "./mcp-clients.js";
-import { captureLogMarker, readFlutterLogSince } from "./native-log.js";
+import { captureLogMarker, readNativeLogSince } from "./platform-support.js";
 
 const REPRODUCTION_RUNS = 3;
 
@@ -67,7 +68,9 @@ export async function waitForStableUi(marionette: Client, maxWaitMs = 5000, poll
 async function runOnce(
   marionette: Client,
   dartMcp: Client,
+  platform: DevicePlatform,
   deviceId: string,
+  isSimulator: boolean,
   applicationId: string,
   appPath: string,
   steps: InvestigationStep[],
@@ -76,13 +79,13 @@ async function runOnce(
   // Both the Dart MCP connection and this log marker must be captured BEFORE
   // the interaction steps run, not after — see connectDartMcpToApp's docstring
   // and doc/007 for why connecting/marking late silently misses everything.
-  const logMarker = await captureLogMarker(deviceId);
+  const logMarker = await captureLogMarker(platform, deviceId);
 
   await runInteractionSteps(marionette, steps);
 
   const interactiveElements = await waitForStableUi(marionette);
   const runtimeErrors = await getRuntimeErrors(dartMcp);
-  const nativeLog = await readFlutterLogSince(deviceId, applicationId, logMarker);
+  const nativeLog = await readNativeLogSince(platform, deviceId, isSimulator, applicationId, logMarker);
   const networkActivity = await getNetworkActivity(dartMcp);
 
   const signals: AnomalySignal[] = [];
@@ -121,7 +124,9 @@ async function runOnce(
 export async function reproduce(
   marionette: Client,
   dartMcp: Client,
+  platform: DevicePlatform,
   deviceId: string,
+  isSimulator: boolean,
   applicationId: string,
   appPath: string,
   steps: InvestigationStep[],
@@ -129,7 +134,9 @@ export async function reproduce(
 ): Promise<ReproductionResult> {
   const runs: RunResult[] = [];
   for (let i = 0; i < REPRODUCTION_RUNS; i++) {
-    runs.push(await runOnce(marionette, dartMcp, deviceId, applicationId, appPath, steps, expectedElementKey));
+    runs.push(
+      await runOnce(marionette, dartMcp, platform, deviceId, isSimulator, applicationId, appPath, steps, expectedElementKey),
+    );
     if (i < REPRODUCTION_RUNS - 1) {
       await marionette.callTool({ name: "hot_restart" });
       await new Promise((r) => setTimeout(r, 1500));
