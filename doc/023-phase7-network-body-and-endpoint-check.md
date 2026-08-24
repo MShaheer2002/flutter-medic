@@ -45,9 +45,17 @@ exactly the gap the user pointed at.
 
 - `check_endpoint` self-checked against a real local HTTP server (not
   mocked) — default GET, explicit POST with a body, headers, and status all
-  round-tripped correctly.
-- Body-content enrichment: pending a live run against the real device (see
-  below).
+  round-tripped correctly. Then confirmed again through the actual MCP tool
+  (the self-check bypassed the MCP layer entirely) against a second local
+  server — status, headers, and body all correct.
+- **Body-content enrichment, live, on the real device**: ran `investigate`
+  against `killer_demo_app`. `networkActivity` now carries
+  `"responseBodyText":"[\"Buy groceries\",\"Finish quarterly report\",\"Call
+  the dentist\",\"Review pull request #42\",\"Water the plants\"]"` on all 3
+  runs — the real 5-task response body, not just `statusCode: 200`. This is
+  the spec's own §6 worked example, now literally provable from evidence:
+  the API genuinely returned 5 real tasks; the widget genuinely rendered
+  none.
 
 ## Files modified
 
