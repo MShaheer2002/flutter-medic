@@ -39,19 +39,23 @@ export function detectRuntimeException(runtimeErrorsText: string): AnomalySignal
 }
 
 /**
- * Flags any "E/flutter" native log output (Android only). This is a backstop
- * for exception classes detectRuntimeException structurally can't see — see
- * doc/007 — an unhandled fire-and-forget async error never reaches the VM
- * service's Flutter.Error/Stderr streams, but the engine still prints it to
- * native platform logging (adb logcat), which this checks directly.
+ * Flags any "E/flutter" native log output. This is a backstop for exception
+ * classes detectRuntimeException structurally can't see — see doc/007 — an
+ * unhandled fire-and-forget async error never reaches the VM service's
+ * Flutter.Error/Stderr streams, but the engine still prints it to native
+ * platform logging (adb logcat on Android, `log show` on iOS), which this
+ * checks directly.
  */
 export function detectNativeLogException(logText: string): AnomalySignal | null {
-  // logcat prints its own "--------- beginning of <buffer>" marker lines when
-  // a requested time range starts before the buffer has content — not a real
-  // log entry, has to be filtered out separately from genuine app output.
+  // Both platforms' log tools print their own header/marker lines even when
+  // there's zero real content — not a real log entry, has to be filtered out
+  // separately from genuine app output. Found live on iOS (doc/021):
+  // `log show`'s own column header ("Timestamp  Ty  Process[PID:TID]  ...")
+  // was false-firing this rule on every run, same bug class as Android's
+  // "--------- beginning of <buffer>" line (009).
   const realLines = logText
     .split("\n")
-    .filter((line) => line.trim() !== "" && !line.startsWith("---------"));
+    .filter((line) => line.trim() !== "" && !line.startsWith("---------") && !line.startsWith("Timestamp"));
 
   if (realLines.length === 0) {
     return null;
