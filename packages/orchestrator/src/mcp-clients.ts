@@ -14,6 +14,31 @@ export function launchApp(deviceId: string, appPath: string): ChildProcessWithou
 }
 
 /**
+ * Root cause of the doc/016 "evidence stuck after hot_restart" bug, found by
+ * reading marionette_mcp's own source (VmServiceConnector.hotRestart, 0.6.0):
+ * after the restart RPC succeeds, it re-resolves which isolate to bind to by
+ * scanning getVM()'s isolate list for the first one with the Marionette
+ * extension registered — with NO delay before the very first attempt. If the
+ * just-torn-down old isolate hasn't been pruned from that list yet at that
+ * exact instant, it can grab the dying old isolate instead of the new one.
+ * This happens synchronously inside Marionette's own hot_restart call,
+ * before it ever returns control to us — so no amount of waiting or polling
+ * on our side afterward can fix it once the wrong isolate is cached (matches
+ * exactly what was observed: stale, but perfectly stable, evidence).
+ *
+ * We can't patch marionette_mcp itself. Workaround: call hot_restart a
+ * second time immediately after the first. By the time the second call's
+ * internal isolate search runs, real wall-clock time has passed (the first
+ * call's own execution, its internal retry loop, our round trip) — enough,
+ * empirically, for the truly-dead old isolate to have actually disappeared,
+ * so the second search finds only the genuinely new one.
+ */
+export async function hotRestartTwice(marionette: Client): Promise<void> {
+  await marionette.callTool({ name: "hot_restart" });
+  await marionette.callTool({ name: "hot_restart" });
+}
+
+/**
  * Killing the local `flutter run` wrapper process doesn't reliably stop the
  * app on the device itself — force-stop it explicitly so a stale instance
  * doesn't linger and confuse the next run.

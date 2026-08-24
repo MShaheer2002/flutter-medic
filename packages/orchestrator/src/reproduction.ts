@@ -9,7 +9,7 @@ import {
 } from "./anomaly-detection.js";
 import { loadBaseline, saveBaseline } from "./baseline.js";
 import type { DevicePlatform } from "./device-detection.js";
-import { connectDartMcpToApp, getNetworkActivity, getRuntimeErrors, toolText } from "./mcp-clients.js";
+import { connectDartMcpToApp, getNetworkActivity, getRuntimeErrors, hotRestartTwice, toolText } from "./mcp-clients.js";
 import { captureLogMarker, readNativeLogSince } from "./platform-support.js";
 
 const REPRODUCTION_RUNS = 3;
@@ -50,15 +50,35 @@ export async function runInteractionSteps(marionette: Client, steps: Investigati
  * A fixed sleep after interaction steps isn't reliable — found live: even
  * 1500ms was sometimes too short for a route transition to finish, so
  * evidence got captured on the screen being navigated AWAY from (doc/016).
- * Polls until two consecutive reads match (the UI has actually stopped
- * changing) instead of guessing a bigger constant.
+ * Polls until the UI has actually stopped changing, instead of guessing a
+ * bigger constant.
+ *
+ * Requires `requiredStableReads` consecutive identical reads, not just two
+ * (doc/024) — two was too eager: if the isolate/engine is genuinely busy or
+ * blocked for longer than one poll interval (during cold-start init, or
+ * right after hot_restart), get_interactive_elements can return the exact
+ * same frozen, stale frame on two back-to-back polls, falsely looking
+ * "stable" long before the real final frame ever renders. Requiring one
+ * more consecutive match raises confidence without changing the bounded
+ * worst-case wait.
  */
-export async function waitForStableUi(marionette: Client, maxWaitMs = 5000, pollIntervalMs = 300): Promise<string> {
+export async function waitForStableUi(
+  marionette: Client,
+  maxWaitMs = 5000,
+  pollIntervalMs = 300,
+  requiredStableReads = 3,
+): Promise<string> {
   let previous: string | null = null;
+  let matchStreak = 0;
   const deadline = Date.now() + maxWaitMs;
   while (Date.now() < deadline) {
     const current = toolText(await marionette.callTool({ name: "get_interactive_elements" }));
-    if (current === previous) return current;
+    if (current === previous) {
+      matchStreak++;
+      if (matchStreak >= requiredStableReads - 1) return current;
+    } else {
+      matchStreak = 0;
+    }
     previous = current;
     await new Promise((r) => setTimeout(r, pollIntervalMs));
   }
@@ -138,7 +158,10 @@ export async function reproduce(
       await runOnce(marionette, dartMcp, platform, deviceId, isSimulator, applicationId, appPath, steps, expectedElementKey),
     );
     if (i < REPRODUCTION_RUNS - 1) {
-      await marionette.callTool({ name: "hot_restart" });
+      // hotRestartTwice, not a single hot_restart — works around a real
+      // marionette_mcp race that stuck evidence on a dying old isolate
+      // (doc/024). Fixes the actual bug 016/019 documented, not the symptom.
+      await hotRestartTwice(marionette);
       await new Promise((r) => setTimeout(r, 1500));
       // Hot restart creates a new isolate — Dart MCP's DTD connection needs
       // to be re-established, same as Marionette re-attaches automatically.

@@ -14,6 +14,7 @@ import {
   connectStdioClient,
   getNetworkActivity,
   getRuntimeErrors,
+  hotRestartTwice,
   launchApp as spawnFlutterRun,
   toolText,
   waitForVmServiceUri,
@@ -165,7 +166,9 @@ export async function observe() {
 
 export async function hotRestart() {
   const session = requireSession();
-  await session.marionette.callTool({ name: "hot_restart" });
+  // hotRestartTwice, not a single hot_restart — works around a real
+  // marionette_mcp race that stuck evidence on a dying old isolate (024).
+  await hotRestartTwice(session.marionette);
   await new Promise((r) => setTimeout(r, 1500));
   // New isolate after restart — Dart MCP's DTD connection needs re-establishing,
   // same lesson as investigate.ts and doc/007.
@@ -348,7 +351,9 @@ export async function verifyFix(
 ) {
   const session = requireSession();
   if (reloadMode === "hot_restart") {
-    await session.marionette.callTool({ name: "hot_restart" });
+    // hotRestartTwice, not a single hot_restart — works around a real
+    // marionette_mcp race that stuck evidence on a dying old isolate (024).
+    await hotRestartTwice(session.marionette);
     await new Promise((r) => setTimeout(r, 1500));
     await connectDartMcpToApp(session.dartMcp, session.appPath);
     if (steps) await runInteractionSteps(session.marionette, steps);
