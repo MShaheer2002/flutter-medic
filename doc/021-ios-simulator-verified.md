@@ -51,8 +51,15 @@ now covers both platforms' tool-noise instead of just Android's.
 - Self-checked directly: the exact false-positive string from the live run
   now correctly returns no signal; a real error following the same header
   still correctly fires; Android's existing filter still works unchanged.
-- Live re-verification against the same booted simulator: pending a session
-  restart (this fix isn't loaded into the running MCP server yet).
+- **Live re-verification, same booted simulator, same app, after a session
+  restart to load the fix**: reran the identical investigation.
+  `expected-element-missing` still correctly fired 3/3 (the real bug);
+  `native-log-exception` no longer fired at all. `nativeLog` in the raw
+  evidence still contains the header text (`"Timestamp Ty
+  Process[PID:TID]"`) — correctly captured as raw evidence, just no longer
+  misjudged as an anomaly by the rule. Second run reused the already-built
+  app, launching in seconds instead of the first run's multi-minute cold
+  Xcode compile.
 
 ## Files modified
 
