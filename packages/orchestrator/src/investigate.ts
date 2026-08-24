@@ -85,10 +85,21 @@ export async function runInvestigation(params: InvestigateParams): Promise<Evide
 // not a hardcoded default — the tool doesn't know or care what bug it's looking
 // for until it's told.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const [appPath, configPath, deviceId] = process.argv.slice(2);
+  const rawArgs = process.argv.slice(2);
+  // --ci flips exit-code polarity (Phase 6, §13). Without it, this CLI's
+  // historical convention is "confirmed = 0" — useful for self-testing
+  // flutter-medic itself against a known bug (did it correctly confirm what
+  // we expected?). That's the wrong polarity for an actual CI gate on a real
+  // project: there, a confirmed bug must FAIL the check, not pass it. Two
+  // different questions ("did the tool work?" vs "is the app healthy?")
+  // sharing one exit code would silently break one of them — --ci exists so
+  // callers say which question they're asking instead of guessing.
+  const ci = rawArgs.includes("--ci");
+  const [appPath, configPath, deviceId] = rawArgs.filter((a) => a !== "--ci");
   if (!appPath || !configPath) {
-    console.error("Usage: investigate <app-path> <config.json> [device-id]");
+    console.error("Usage: investigate <app-path> <config.json> [device-id] [--ci]");
     console.error('config.json shape: { "goal": string, "steps": InvestigationStep[], "expectedElementKey"?: string }');
+    console.error("--ci: exit 1 if a bug is confirmed (CI gate). Without it, exit 0 on confirmed (self-test convention).");
     process.exit(1);
   }
 
@@ -99,7 +110,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   runInvestigation({ deviceId, appPath, ...config })
     .then((report) => {
       console.log(JSON.stringify(report, null, 2));
-      process.exitCode = report.verdict === "confirmed" ? 0 : 1;
+      const confirmed = report.verdict === "confirmed";
+      process.exitCode = ci ? (confirmed ? 1 : 0) : confirmed ? 0 : 1;
     })
     .catch((err) => {
       console.error(err);
