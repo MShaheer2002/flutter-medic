@@ -107,15 +107,60 @@ export async function enableHttpProfiling(dartMcp: Client, isolateId: string): P
   });
 }
 
+function decodeBodyBytes(bytes: unknown): string | undefined {
+  if (!Array.isArray(bytes) || bytes.length === 0) return undefined;
+  try {
+    return Buffer.from(bytes as number[]).toString("utf-8");
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * `ext.dart.io.getHttpProfile` only returns metadata (status, headers,
+ * timing) — never the actual request/response body content, which needs a
+ * separate per-request `ext.dart.io.getHttpProfileRequest` call (confirmed
+ * against vm_service's own source, doc/023). Enriches each completed
+ * request in place with `requestBodyText`/`responseBodyText` so the
+ * calling agent can actually see what data an API returned, not just that
+ * it returned 200.
+ */
 export async function getNetworkActivity(dartMcp: Client): Promise<string> {
   try {
     const isolateId = await getMainIsolateId(dartMcp);
-    return toolText(
+    const raw = toolText(
       await dartMcp.callTool({
         name: "vm_service",
         arguments: { command: "callMethod", method: "ext.dart.io.getHttpProfile", isolateId },
       }),
     );
+    const profile = JSON.parse(raw) as { requests?: Array<Record<string, unknown>> };
+
+    for (const request of profile.requests ?? []) {
+      if (!request.response) continue; // still in flight — nothing to fetch yet
+      try {
+        const detailRaw = toolText(
+          await dartMcp.callTool({
+            name: "vm_service",
+            arguments: {
+              command: "callMethod",
+              method: "ext.dart.io.getHttpProfileRequest",
+              isolateId,
+              arguments: { id: request.id },
+            },
+          }),
+        );
+        const detail = JSON.parse(detailRaw) as { requestBody?: unknown; responseBody?: unknown };
+        const requestBodyText = decodeBodyBytes(detail.requestBody);
+        const responseBodyText = decodeBodyBytes(detail.responseBody);
+        if (requestBodyText) request.requestBodyText = requestBodyText.slice(0, 10000);
+        if (responseBodyText) request.responseBodyText = responseBodyText.slice(0, 10000);
+      } catch {
+        // Best-effort — a missing body must not break the rest of the evidence.
+      }
+    }
+
+    return JSON.stringify(profile);
   } catch {
     return "";
   }

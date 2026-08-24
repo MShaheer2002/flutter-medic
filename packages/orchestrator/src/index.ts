@@ -3,6 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 import { runInvestigation } from "./investigate.js";
+import { checkEndpoint } from "./network-check.js";
 import {
   closeApp,
   doubleTap,
@@ -418,6 +419,27 @@ server.registerTool(
     },
   },
   async ({ expectedElementKey, reloadMode, steps }) => textResult(await verifyFix(expectedElementKey, reloadMode, steps)),
+);
+
+server.registerTool(
+  "check_endpoint",
+  {
+    title: "Independently check an API endpoint",
+    description:
+      "Phase 7 (§13, scoped down from backend log tailing): makes a real, independent HTTP request outside " +
+      "the app's own network stack entirely — for cross-checking whether an endpoint genuinely behaves the " +
+      "way the app's observed network evidence (networkActivity, now including actual body content) " +
+      "suggests, or whether something app-side (auth headers, cookies, request formatting) is the real " +
+      "cause. On-demand only — call this when independent verification is actually useful, not on every " +
+      "investigation. No active launch_app session required.",
+    inputSchema: {
+      url: z.string().describe("Full URL to request"),
+      method: z.string().optional().describe("HTTP method (default GET)"),
+      headers: z.record(z.string(), z.string()).optional().describe("Request headers"),
+      body: z.string().optional().describe("Request body, for methods that take one"),
+    },
+  },
+  async ({ url, method, headers, body }) => textResult(await checkEndpoint(url, method, headers, body)),
 );
 
 const transport = new StdioServerTransport();
