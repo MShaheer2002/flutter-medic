@@ -15,7 +15,17 @@ flutter-medic is an MCP orchestration layer that sits between your AI coding age
 
 ## Status
 
-**Built and live-verified end to end**, on both Android and iOS. All seven roadmap phases below are implemented and have been confirmed working against real devices/simulators, not just unit-tested — see [`doc/`](./doc) for the full build log, every decision, and every live-verification result. Not yet published as an installable package — see [Installing](#installing) for the setup that works today.
+**Built and live-verified end to end**, on both Android and iOS — confirmed working against real devices and simulators, not just unit-tested. See [`doc/`](./doc) for the full build log, every decision, and every live-verification result. Not yet published as an installable package — see [Installing](#installing) for the setup that works today.
+
+## What it can actually do
+
+- **Run and drive the app itself** — launch on a real device, simulator, or emulator; navigate by tapping, typing, swiping, scrolling, pinch-zooming, long-pressing, going back — the same interactions a human tester would perform, driven autonomously from a plain-language goal.
+- **Investigate on its own** — given a goal like *"log in and make sure the dashboard loads,"* it plans the steps itself, explores the app, and figures out what's broken without being told where to look first.
+- **Gather real evidence, not guesses** — the actual widget tree, runtime exceptions, native device logs, and real network traffic (including full request/response bodies, not just status codes) — cross-referenced into one timeline.
+- **Prove it's a real bug** — reproduces the failure multiple times before reporting anything, so a one-off flake never gets reported as a confirmed defect.
+- **Hand off to a coding agent to fix it** — and then automatically re-run the same steps to confirm the fix actually worked, instead of just trusting the diff.
+- **Dig deeper when the evidence isn't enough** — temporarily insert debug logging into the app's own source, rerun, read the result, then clean up automatically.
+- **Cross-check independently** — hit an API endpoint directly, outside the app's own network stack, to tell apart "the backend is wrong" from "the app is calling it wrong."
 
 ## Why
 
@@ -89,22 +99,11 @@ One self-contained tool for a known investigation, plus a granular toolkit for o
 
 `observe`/`reproduce`/`investigate` all return raw evidence (widget tree, runtime errors, native log, real network request/response bodies) plus a human-readable `report` — judgment is left to the calling agent, not hardcoded.
 
-## Roadmap
+## What's not built yet
 
-All seven phases from the original spec are built and live-verified:
-
-| Phase | Focus | Status |
-|---|---|---|
-| 0 | Research — validate Dart MCP / Marionette / Patrol MCP APIs and compatibility | ✅ |
-| 1 | Android MVP — orchestration server, tool routing, device lifecycle, log capture | ✅ |
-| 2 | Agentic investigation — natural-language goals, autonomous navigation, reproduction logic, tiered anomaly detection | ✅ |
-| 3 | Evidence & root cause — network/log correlation, temporary instrumentation, structured reports | ✅ |
-| 4 | Fix & verify loop — coding-agent handoff, hot-reload-and-reverify | ✅ |
-| 5 | iOS support — Simulator, live-verified | ✅ |
-| 6 | CI integration — headless-run capability (`--ci` exit codes); wiring an actual workflow is a per-project decision | ✅ |
-| 7 | Network evidence completeness — real response bodies, independent endpoint verification (redefined from the original "backend log tailing" scope) | ✅ |
-
-Not yet built: `flutter-medic init`/`doctor` (one-command setup, auto-registration across agents), and publishing to npm. Patrol MCP (native OS dialogs) was investigated and doesn't currently work reliably in this environment — see `doc/003`/`doc/004`.
+- **One-command setup** (`flutter-medic init`/`doctor`) and **publishing to npm** — right now, setup means cloning and building from source (see [Installing](#installing)).
+- **Native OS dialogs** (permission prompts, system UI) — investigated, doesn't currently work reliably in this environment; see `doc/003`/`doc/004`.
+- **Headless CI usage** works today via the CLI directly, but wiring up an actual CI workflow is left to each project — not something this repo ships preconfigured.
 
 ## Security & privacy
 
