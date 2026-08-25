@@ -29,6 +29,20 @@ import {
   verifyFix,
 } from "./session.js";
 
+// `npx flutter-medic init` runs setup (detect project + agents, register
+// itself) instead of starting the MCP server — branch before building any
+// of the server below, since init mode never needs it.
+if (process.argv[2] === "init") {
+  const { runInit } = await import("./init.js");
+  try {
+    await runInit(process.argv[3]);
+    process.exit(0);
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : err);
+    process.exit(1);
+  }
+}
+
 const server = new McpServer({ name: "flutter-medic", version: "0.0.1" });
 
 function textResult(data: unknown) {
