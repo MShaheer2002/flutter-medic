@@ -1,15 +1,37 @@
 {
-  "name": "@flutter-medic/orchestrator",
-  "version": "0.0.1",
-  "private": true,
+  "name": "flutter-medic",
+  "version": "0.1.0",
+  "description": "MCP orchestration layer that lets AI coding agents autonomously investigate, reproduce, and report bugs in Flutter apps on real devices.",
   "type": "module",
   "main": "dist/index.js",
+  "bin": {
+    "flutter-medic": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "flutter",
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "ai-agent",
+    "debugging",
+    "qa"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MShaheer2002/flutter-medic.git"
+  },
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "investigate": "npm run build && node dist/investigate.js"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0"
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
