@@ -3,3 +3,5 @@ Product-Doc/
 node_modules/
 dist/
 fixtures/
+.dart_tool/
+pubspec.lock

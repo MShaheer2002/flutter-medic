@@ -1,6 +1,6 @@
 {
   "name": "flutter-medic",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "MCP orchestration layer that lets AI coding agents autonomously investigate, reproduce, and report bugs in Flutter apps on real devices.",
   "type": "module",
   "main": "dist/index.js",

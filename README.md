@@ -15,7 +15,7 @@ flutter-medic is an MCP orchestration layer that sits between your AI coding age
 
 ## Status
 
-**Built and live-verified end to end**, on both Android and iOS — confirmed working against real devices and simulators, not just unit-tested. See [`doc/`](./doc) for the full build log, every decision, and every live-verification result. Not yet published as an installable package — see [Installing](#installing) for the setup that works today.
+**Built and live-verified end to end**, on both Android and iOS — confirmed working against real devices and simulators, not just unit-tested. See [`doc/`](./doc) for the full build log, every decision, and every live-verification result. **Published on npm** — see [Installing](#installing).
 
 ## What it can actually do
 
@@ -52,42 +52,48 @@ The orchestrator is simultaneously an MCP server (to your AI client) and an MCP 
 
 ## Installing
 
-Not yet on npm, so for now: clone and build from source.
+From inside the Flutter project you want to investigate:
 
+```sh
+npx flutter-medic init
+```
+
+No cloning this repo, no manually picking the right registration command — `init` detects the project and which of Claude Code / Gemini CLI / Codex CLI / Cursor you have installed. Found just one? Registers automatically. Found more than one? Asks which to register with.
+
+**One thing worth knowing**: Claude Code scopes the registration to the exact project directory `init` was run from — working across multiple Flutter apps means running `npx flutter-medic init` once in each one. Gemini CLI, Codex CLI, and Cursor register globally instead — once is enough, ever, for those three.
+
+Then **restart your agent** — a newly registered MCP server's tools only appear after a fresh session starts (Cursor's the one exception; it picks up config changes live).
+
+`init` also wires the app itself: installs the device bridge tooling, adds `flutter_medic_bridge` to `pubspec.yaml`, and patches `lib/main.dart` to initialize it — automatically, when it can recognize a plain `WidgetsFlutterBinding.ensureInitialized();` line to replace. If your `main.dart` doesn't match that shape, `init` tells you so and you wire it in by hand instead:
+
+```dart
+import 'package:flutter/foundation.dart';
+import 'package:flutter_medic_bridge/flutter_medic_bridge.dart';
+
+void main() {
+  if (kDebugMode) {
+    FlutterMedicBridge.ensureInitialized();
+  } else {
+    WidgetsFlutterBinding.ensureInitialized();
+  }
+  runApp(const MyApp());
+}
+```
+
+**Prerequisites, before `init` will find anything to investigate:**
+- Flutter SDK, with Dart 3.9+ (ships `dart mcp-server` — flutter-medic spawns it internally, nothing to install separately)
+- A physical Android device (USB debugging on) **or** a booted iOS Simulator **or** an Android emulator
+
+From there, just ask your agent to investigate — e.g. *"Use flutter-medic to launch my app, log in, and find out why the tasks aren't showing on Home."*
+
+**Building from source instead** (contributing, or testing a local change):
 ```sh
 git clone https://github.com/MShaheer2002/flutter-medic.git
 cd flutter-medic
 npm install
 npm run build --workspace=packages/orchestrator
+claude mcp add flutter-medic -s local -- node "$(pwd)/packages/orchestrator/dist/index.js"
 ```
-
-**Prerequisites:**
-- Flutter SDK, with Dart 3.9+ (ships `dart mcp-server` — flutter-medic spawns it internally, nothing to install separately)
-- Marionette MCP: `dart pub global activate marionette_mcp`
-- A physical Android device (USB debugging on) **or** a booted iOS Simulator **or** an Android emulator
-- The Flutter app you want to investigate needs [`marionette_flutter`](https://pub.dev/packages/marionette_flutter) wired into its own `main.dart`:
-  ```dart
-  import 'package:marionette_flutter/marionette_flutter.dart';
-
-  void main() {
-    if (kDebugMode) {
-      MarionetteBinding.ensureInitialized();
-    } else {
-      WidgetsFlutterBinding.ensureInitialized();
-    }
-    runApp(const MyApp());
-  }
-  ```
-
-**Register it with Claude Code:**
-
-```sh
-claude mcp add flutter-medic -- node /absolute/path/to/flutter-medic/packages/orchestrator/dist/index.js
-```
-
-Then **restart Claude Code** — a newly registered MCP server's tools only appear after a fresh session starts.
-
-From there, just ask your agent to investigate — e.g. *"Use flutter-medic to launch my app, log in, and find out why the tasks aren't showing on Home."*
 
 ## Tool surface
 
@@ -101,7 +107,7 @@ One self-contained tool for a known investigation, plus a granular toolkit for o
 
 ## What's not built yet
 
-- **One-command setup** (`flutter-medic init`/`doctor`) and **publishing to npm** — right now, setup means cloning and building from source (see [Installing](#installing)).
+- **`flutter-medic doctor`** — a setup-verification command (device connection, SDK versions, tool compatibility) before a session starts.
 - **Native OS dialogs** (permission prompts, system UI) — investigated, doesn't currently work reliably in this environment; see `doc/003`/`doc/004`.
 - **Headless CI usage** works today via the CLI directly, but wiring up an actual CI workflow is left to each project — not something this repo ships preconfigured.
 

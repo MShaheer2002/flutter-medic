@@ -1,0 +1,30 @@
+name: flutter_medic_bridge
+description: >-
+  Wires a Flutter app into flutter-medic's device bridge — a drop-in
+  replacement for WidgetsFlutterBinding.ensureInitialized() so an AI agent
+  can drive and inspect the app.
+version: 0.1.1
+homepage: https://github.com/MShaheer2002/flutter-medic
+repository: https://github.com/MShaheer2002/flutter-medic
+issue_tracker: https://github.com/MShaheer2002/flutter-medic/issues
+topics:
+  - mcp
+  - ai
+  - testing
+  - debugging
+
+environment:
+  sdk: ">=3.6.0 <4.0.0"
+  flutter: ">=3.27.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  marionette_flutter: ^0.6.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: false
