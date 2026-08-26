@@ -3,6 +3,22 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
+/**
+ * Always the bare command, resolved via PATH exactly like typing `flutter`
+ * in a terminal would — deliberately not version-manager-aware. Whether a
+ * developer uses fvm, asdf, puro, homebrew, or a manually-installed SDK,
+ * PATH is already how their own terminal picks a Flutter version; deferring
+ * to it here means flutter-medic always matches that, with zero knowledge of
+ * which tool (if any) put it there. Not something to special-case per tool.
+ */
+export const FLUTTER_BIN = "flutter";
+
+/** Works the same regardless of what put `flutter` on PATH — the calling agent should always know which version it's driving. */
+export async function getFlutterVersion(bin: string): Promise<string> {
+  const { stdout } = await execFileAsync(bin, ["--version"]);
+  return stdout.match(/Flutter (\S+)/)?.[1] ?? "unknown";
+}
+
 export type DevicePlatform = "android" | "ios";
 
 export interface DetectedDevice {
@@ -39,7 +55,7 @@ function toDetectedDevice(d: FlutterDevice): DetectedDevice {
  * the wrong device silently is worse than asking the caller to be explicit.
  */
 export async function resolveDevice(deviceId?: string): Promise<DetectedDevice> {
-  const { stdout } = await execFileAsync("flutter", ["devices", "--machine"]);
+  const { stdout } = await execFileAsync(FLUTTER_BIN, ["devices", "--machine"]);
   const devices: FlutterDevice[] = JSON.parse(stdout);
 
   if (deviceId) {

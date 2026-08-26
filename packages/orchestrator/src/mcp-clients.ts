@@ -4,13 +4,14 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { FLUTTER_BIN } from "./device-detection.js";
 
 const execFileAsync = promisify(execFile);
 
 export const MARIONETTE_MCP_BIN = join(homedir(), ".pub-cache/bin/marionette_mcp");
 
 export function launchApp(deviceId: string, appPath: string): ChildProcessWithoutNullStreams {
-  return spawn("flutter", ["run", "-d", deviceId, "--debug"], { cwd: appPath });
+  return spawn(FLUTTER_BIN, ["run", "-d", deviceId, "--debug"], { cwd: appPath });
 }
 
 /**
@@ -47,19 +48,41 @@ export async function forceStopApp(deviceId: string, applicationId: string): Pro
   await execFileAsync("adb", ["-s", deviceId, "shell", "am", "force-stop", applicationId]).catch(() => {});
 }
 
+/**
+ * If `flutter run` dies before the app ever starts, the useful diagnostic
+ * (an Xcode/Gradle/pub error) is sitting in its stdout/stderr — surfacing
+ * that tail instead of a bare exit code is what lets the calling coding
+ * agent actually diagnose and fix a build failure itself, then retry
+ * launch_app, rather than flutter-medic needing to guess at a fix.
+ */
 export function waitForVmServiceUri(proc: ChildProcessWithoutNullStreams): Promise<string> {
   return new Promise((resolve, reject) => {
     let buffer = "";
-    const onData = (chunk: Buffer) => {
+    let settled = false;
+
+    const onOutput = (chunk: Buffer) => {
       buffer += chunk.toString();
       const match = buffer.match(/A Dart VM Service .* is available at: (http:\/\/[^\s]+)/);
-      if (match) {
-        proc.stdout.off("data", onData);
+      if (match && !settled) {
+        settled = true;
+        proc.stdout.off("data", onOutput);
+        proc.stderr.off("data", onOutput);
         resolve(match[1].replace("http://", "ws://") + "ws");
       }
     };
-    proc.stdout.on("data", onData);
-    proc.on("exit", (code) => reject(new Error(`flutter run exited early (code ${code})`)));
+    proc.stdout.on("data", onOutput);
+    proc.stderr.on("data", onOutput);
+
+    proc.on("exit", (code) => {
+      if (settled) return;
+      settled = true;
+      const tail = buffer.trim().split("\n").slice(-40).join("\n");
+      reject(
+        new Error(
+          `flutter run exited before the app started (code ${code}) — this is a build failure, not a flutter-medic bug. Last output:\n${tail}`,
+        ),
+      );
+    });
   });
 }
 

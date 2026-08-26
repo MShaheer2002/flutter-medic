@@ -6,16 +6,22 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 
 /**
- * Reads the Android application ID out of the project's build.gradle.kts.
- * This is what `adb logcat --pid` needs to scope to the right process.
+ * Reads the Android application ID out of build.gradle(.kts) — this is what
+ * `adb logcat --pid` needs to scope to the right process. Tries Kotlin DSL
+ * first, falls back to Groovy: real projects use either (found live —
+ * E-Commerce-App uses plain build.gradle, not .kts). Groovy also allows
+ * `applicationId "..."` without `=` across older AGP versions, so both are
+ * matched.
  */
 export async function getAndroidApplicationId(appPath: string): Promise<string> {
-  const gradle = await readFile(join(appPath, "android/app/build.gradle.kts"), "utf-8");
-  const match = gradle.match(/applicationId\s*=\s*"([^"]+)"/);
-  if (!match) {
-    throw new Error(`Could not find applicationId in ${appPath}/android/app/build.gradle.kts`);
+  const candidates = ["android/app/build.gradle.kts", "android/app/build.gradle"];
+  for (const candidate of candidates) {
+    const gradle = await readFile(join(appPath, candidate), "utf-8").catch(() => null);
+    if (gradle === null) continue;
+    const match = gradle.match(/applicationId\s*=?\s*"([^"]+)"/);
+    if (match) return match[1];
   }
-  return match[1];
+  throw new Error(`Could not find applicationId in ${appPath}/android/app/build.gradle(.kts)`);
 }
 
 /** Captures the device's current time, in the format `adb logcat -T` expects. */

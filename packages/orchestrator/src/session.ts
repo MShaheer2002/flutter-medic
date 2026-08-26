@@ -7,7 +7,7 @@ import {
   detectRuntimeException,
   type AnomalySignal,
 } from "./anomaly-detection.js";
-import { resolveDevice, type DevicePlatform } from "./device-detection.js";
+import { FLUTTER_BIN, getFlutterVersion, resolveDevice, type DevicePlatform } from "./device-detection.js";
 import {
   MARIONETTE_MCP_BIN,
   connectDartMcpToApp,
@@ -20,6 +20,7 @@ import {
   waitForVmServiceUri,
 } from "./mcp-clients.js";
 import { instrumentFile, revertAll, revertFile } from "./instrumentation.js";
+import { tapNativeAndroid } from "./native-tap.js";
 import { captureLogMarker, forceStopApp, getApplicationId, readNativeLogSince } from "./platform-support.js";
 import {
   reproduce as runReproduction,
@@ -76,6 +77,7 @@ export async function launchAppSession(appPath: string, deviceId?: string) {
   }
 
   const device = await resolveDevice(deviceId);
+  const flutterVersion = await getFlutterVersion(FLUTTER_BIN);
 
   const appProcess = spawnFlutterRun(device.id, appPath);
   const vmServiceUri = await waitForVmServiceUri(appProcess);
@@ -103,7 +105,7 @@ export async function launchAppSession(appPath: string, deviceId?: string) {
     instrumentedFiles: new Map(),
   };
 
-  return { deviceId: device.id, deviceName: device.name, appPath };
+  return { deviceId: device.id, deviceName: device.name, appPath, flutterVersion };
 }
 
 export async function closeApp() {
@@ -128,10 +130,10 @@ export async function closeApp() {
   };
 }
 
-export async function tap(key: string) {
+export async function tap(matcher: ElementMatcher) {
   const session = requireSession();
-  await session.marionette.callTool({ name: "tap", arguments: { key } });
-  return { message: `Tapped element with key "${key}".` };
+  await session.marionette.callTool({ name: "tap", arguments: { ...matcher } });
+  return { message: "Tapped." };
 }
 
 export async function enterText(key: string, input: string) {
@@ -261,6 +263,23 @@ export async function pressBackButton() {
   const session = requireSession();
   const result = await session.marionette.callTool({ name: "press_back_button" });
   return { message: toolText(result) };
+}
+
+/**
+ * Taps a native OS element (a permission dialog, a system sign-in sheet) by
+ * visible text/label — outside the Flutter widget tree entirely, so
+ * Marionette's tap can't reach it. Android only for now (see native-tap.ts);
+ * iOS needs idb, not yet wired in.
+ */
+export async function tapNative(label: string) {
+  const session = requireSession();
+  if (session.platform !== "android") {
+    throw new Error(
+      "tap_native only supports Android right now (uiautomator/adb). iOS native-dialog automation isn't wired in yet.",
+    );
+  }
+  const result = await tapNativeAndroid(session.deviceId, label);
+  return { message: `Tapped native element matching "${result.matchedLabel}" at (${result.x}, ${result.y}).` };
 }
 
 /**

@@ -18,6 +18,7 @@ import {
   observe,
   pinchZoom,
   pressBackButton,
+  tapNative,
   pressKey,
   reproduce,
   revertInstrumentation,
@@ -137,10 +138,12 @@ server.registerTool(
   "tap",
   {
     title: "Tap a widget",
-    description: "Taps the widget with the given ValueKey in the currently launched app.",
-    inputSchema: { key: z.string().describe("The widget's ValueKey") },
+    description:
+      "Taps the matched element — by key, text, type, or screen coordinates (for widgets with no key or " +
+      "own accessible label, e.g. an icon-only social-sign-in button).",
+    inputSchema: matcherSchema,
   },
-  async ({ key }) => textResult(await tap(key)),
+  async (matcher) => textResult(await tap(matcher)),
 );
 
 server.registerTool(
@@ -298,6 +301,22 @@ server.registerTool(
     inputSchema: {},
   },
   async () => textResult(await pressBackButton()),
+);
+
+server.registerTool(
+  "tap_native",
+  {
+    title: "Tap a native OS dialog element",
+    description:
+      "Taps a native (non-Flutter) UI element by its visible text or accessibility label — a permission " +
+      "prompt, a system sign-in sheet — that lives outside the Flutter widget tree, where Marionette's tap " +
+      "can't reach. Android only for now (adb/uiautomator, no target-app changes needed); iOS isn't wired " +
+      "in yet.",
+    inputSchema: {
+      label: z.string().describe('Visible text or accessibility label of the element to tap, e.g. "Allow" or "Continue"'),
+    },
+  },
+  async ({ label }) => textResult(await tapNative(label)),
 );
 
 server.registerTool(
