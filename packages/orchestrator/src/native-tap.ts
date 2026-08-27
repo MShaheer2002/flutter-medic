@@ -1,5 +1,5 @@
 import assert from "node:assert";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
 
@@ -129,6 +129,83 @@ export async function tapNativeAndroid(
   return { x: center.x, y: center.y, matchedLabel: label };
 }
 
+// --- iOS (idb) ---
+//
+// idb (Meta's iOS Development Bridge) exposes the same kind of accessibility
+// dump as uiautomator, via `idb ui describe-all`/`idb ui tap`. Verified live
+// against a real booted Simulator: works for native system dialogs (alerts,
+// permission prompts) and the ASWebAuthenticationSession consent sheet —
+// but NOT for content rendered inside a WKWebView (e.g. the actual Google
+// account picker that sheet opens into), which returns zero accessibility
+// nodes even after retrying. That's a real platform difference from
+// Android's equivalent (a native Activity there), not a gap in this code.
+//
+// Requires `idb` on PATH (deliberately not hardcoded to any one install
+// method — pip, pipx, or brew's facebook/fb/idb-cli all put it on PATH) and
+// idb_companion running for the target simulator, which this connects to
+// on demand rather than assuming it's already up.
+
+const IDB_BIN = "idb";
+
+interface IosUiNode {
+  label: string;
+  frame: { x: number; y: number; width: number; height: number } | null;
+  enabled: boolean;
+}
+
+/** idb's describe-all is a flat JSON array — accessibility labels sit directly on the interactive element itself (no Android-style ancestor-walk needed, confirmed against real dialogs). */
+export function parseIosUiNodes(json: string): IosUiNode[] {
+  const raw: unknown[] = JSON.parse(json);
+  return raw.map((n) => {
+    const o = n as Record<string, unknown>;
+    const label = (o.AXLabel as string) || (o.title as string) || "";
+    const frame = o.frame as IosUiNode["frame"];
+    return { label: typeof label === "string" ? label : "", frame, enabled: o.enabled !== false };
+  });
+}
+
+function centerOfFrame(frame: NonNullable<IosUiNode["frame"]>): { x: number; y: number } {
+  return { x: Math.round(frame.x + frame.width / 2), y: Math.round(frame.y + frame.height / 2) };
+}
+
+export function findIosNode(nodes: IosUiNode[], label: string): IosUiNode | undefined {
+  const needle = label.toLowerCase();
+  return nodes.find((n) => n.enabled && n.label.toLowerCase().includes(needle));
+}
+
+/** Connects the idb CLI to a running companion for this simulator, starting one if none is up yet. Idempotent — safe to call before every tap. */
+async function ensureIdbConnected(udid: string): Promise<void> {
+  const { stdout } = await execFileAsync(IDB_BIN, ["list-targets"]).catch(() => ({ stdout: "" }));
+  const line = stdout.split("\n").find((l) => l.includes(udid));
+  if (line && !line.includes("No Companion Connected")) return;
+
+  const companion = spawn("idb_companion", ["--udid", udid], { detached: true, stdio: "ignore" });
+  companion.unref();
+  await new Promise((r) => setTimeout(r, 3000));
+  await execFileAsync(IDB_BIN, ["connect", "localhost", "10882"]);
+}
+
+export async function tapNativeIos(
+  udid: string,
+  label: string,
+): Promise<{ x: number; y: number; matchedLabel: string }> {
+  await ensureIdbConnected(udid);
+
+  const { stdout: json } = await execFileAsync(IDB_BIN, ["ui", "describe-all", "--udid", udid]);
+  const node = findIosNode(parseIosUiNodes(json), label);
+  if (!node || !node.frame) {
+    throw new Error(
+      `No tappable native element matching "${label}" found on screen. If this is inside a web-rendered ` +
+        `sign-in flow (e.g. Google/Facebook OAuth), that's a known idb limitation, not a bug — it can't see ` +
+        `into a WKWebView's content.`,
+    );
+  }
+  const center = centerOfFrame(node.frame);
+
+  await execFileAsync(IDB_BIN, ["ui", "tap", String(center.x), String(center.y), "--udid", udid]);
+  return { x: center.x, y: center.y, matchedLabel: label };
+}
+
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   // Case 1: a plain button — text and clickable on the same node.
   const buttonXml =
@@ -154,6 +231,16 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const rowMatch = findTappableNode(parseUiNodes(rowXml), "Shaheer Project");
   assert.strictEqual(rowMatch?.text, "", "should tap the clickable container, not the text node itself");
   assert.deepStrictEqual(rowMatch && parseBounds(rowMatch.bounds), { x1: 48, y1: 500, x2: 672, y2: 628 });
+
+  // iOS: label sits directly on the node, modeled on the real
+  // ASWebAuthenticationSession sheet ({"AXLabel": "Continue", ...}).
+  const iosJson = JSON.stringify([
+    { AXLabel: "Cancel", frame: { x: 100, y: 400, width: 120, height: 50 }, enabled: true },
+    { AXLabel: "Continue", frame: { x: 300, y: 400, width: 120, height: 50 }, enabled: true },
+  ]);
+  const iosMatch = findIosNode(parseIosUiNodes(iosJson), "continue");
+  assert.strictEqual(iosMatch?.label, "Continue");
+  assert.deepStrictEqual(iosMatch.frame && centerOfFrame(iosMatch.frame), { x: 360, y: 425 });
 
   console.log("native-tap self-check passed");
 }

@@ -310,8 +310,9 @@ server.registerTool(
     description:
       "Taps a native (non-Flutter) UI element by its visible text or accessibility label — a permission " +
       "prompt, a system sign-in sheet — that lives outside the Flutter widget tree, where Marionette's tap " +
-      "can't reach. Android only for now (adb/uiautomator, no target-app changes needed); iOS isn't wired " +
-      "in yet.",
+      "can't reach. Works on Android (adb/uiautomator) and iOS (idb) for native alerts and dialogs. Can't " +
+      "reach content rendered inside a web view (e.g. the account picker inside an OAuth flow) — that's a " +
+      "platform limitation, not something this tool can currently work around.",
     inputSchema: {
       label: z.string().describe('Visible text or accessibility label of the element to tap, e.g. "Allow" or "Continue"'),
     },

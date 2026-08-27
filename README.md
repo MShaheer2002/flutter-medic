@@ -83,6 +83,7 @@ void main() {
 **Prerequisites, before `init` will find anything to investigate:**
 - Flutter SDK, with Dart 3.9+ (ships `dart mcp-server` — flutter-medic spawns it internally, nothing to install separately)
 - A physical Android device (USB debugging on) **or** a booted iOS Simulator **or** an Android emulator
+- For `tap_native` on iOS only: [`idb`](https://github.com/facebook/idb) on PATH, plus `idb_companion` (`brew install facebook/fb/idb-companion`, `pip install fb-idb`) — everything else works without it.
 
 From there, just ask your agent to investigate — e.g. *"Use flutter-medic to launch my app, log in, and find out why the tasks aren't showing on Home."*
 
@@ -102,14 +103,13 @@ One self-contained tool for a known investigation, plus a granular toolkit for o
 - **`investigate`** — give it steps + what you expect to see; it launches, reproduces 3x, and reports.
 - **Session tools** — `launch_app`, `tap`, `enter_text`, `observe`, `reproduce`, `verify_fix`, `close_app`, plus the full gesture/keyboard set (`double_tap`, `long_press`, `swipe`, `pinch_zoom`, `scroll_to`, `press_back_button`, `press_key`), `hot_reload`/`hot_restart`, `take_screenshots`, `get_logs`.
 - **Debugging aids** — `instrument_code`/`revert_instrumentation` (temporary debug logging, always reverted), `check_endpoint` (independent HTTP request, outside the app's own network stack).
-- **`tap_native`** — taps a native OS element (permission prompt, system sign-in sheet) outside the Flutter widget tree entirely, by visible text/label. Android only for now, via `adb`/`uiautomator` — no target-app changes needed.
+- **`tap_native`** — taps a native OS element (permission prompt, system sign-in sheet) outside the Flutter widget tree entirely, by visible text/label. Works on Android (`adb`/`uiautomator`) and iOS (`idb`) — no target-app changes needed. Can't reach content rendered inside a web view (e.g. the account picker inside an OAuth flow) — that's a platform limitation on both OSes, not something this tool can work around.
 
 `observe`/`reproduce`/`investigate` all return raw evidence (widget tree, runtime errors, native log, real network request/response bodies) plus a human-readable `report` — judgment is left to the calling agent, not hardcoded.
 
 ## What's not built yet
 
 - **`flutter-medic doctor`** — a setup-verification command (device connection, SDK versions, tool compatibility) before a session starts.
-- **Native OS dialogs on iOS** — Android has `tap_native` (above). iOS needs [`idb`](https://github.com/facebook/idb), not yet wired in — Patrol (the tool built for this) was investigated and found unreliable in this environment; see `doc/003`/`doc/004`.
 - **Headless CI usage** works today via the CLI directly, but wiring up an actual CI workflow is left to each project — not something this repo ships preconfigured.
 
 ## Security & privacy

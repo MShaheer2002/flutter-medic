@@ -20,7 +20,7 @@ import {
   waitForVmServiceUri,
 } from "./mcp-clients.js";
 import { instrumentFile, revertAll, revertFile } from "./instrumentation.js";
-import { tapNativeAndroid } from "./native-tap.js";
+import { tapNativeAndroid, tapNativeIos } from "./native-tap.js";
 import { captureLogMarker, forceStopApp, getApplicationId, readNativeLogSince } from "./platform-support.js";
 import {
   reproduce as runReproduction,
@@ -273,12 +273,10 @@ export async function pressBackButton() {
  */
 export async function tapNative(label: string) {
   const session = requireSession();
-  if (session.platform !== "android") {
-    throw new Error(
-      "tap_native only supports Android right now (uiautomator/adb). iOS native-dialog automation isn't wired in yet.",
-    );
-  }
-  const result = await tapNativeAndroid(session.deviceId, label);
+  const result =
+    session.platform === "android"
+      ? await tapNativeAndroid(session.deviceId, label)
+      : await tapNativeIos(session.deviceId, label);
   return { message: `Tapped native element matching "${result.matchedLabel}" at (${result.x}, ${result.y}).` };
 }
 
